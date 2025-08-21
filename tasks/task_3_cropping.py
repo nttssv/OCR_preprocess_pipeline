@@ -16,7 +16,7 @@ class DocumentCroppingTask:
     def __init__(self, logger=None):
         self.logger = logger or logging.getLogger(__name__)
         self.task_name = "Document Cropping"
-        self.task_id = "task_2_cropping"
+        self.task_id = "task_3_cropping"
         
     def run(self, input_file, file_type, output_folder):
         """
@@ -35,7 +35,7 @@ class DocumentCroppingTask:
             self.logger.info(f"🔄 Running {self.task_name} on {os.path.basename(input_file)}")
             
             # Create task-specific output folder
-            task_output = os.path.join(output_folder, "task2_cropping")
+            task_output = os.path.join(output_folder, "task3_cropping")
             os.makedirs(task_output, exist_ok=True)
             
             # Process based on file type

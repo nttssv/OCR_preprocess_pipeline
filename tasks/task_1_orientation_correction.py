@@ -16,7 +16,7 @@ class OrientationCorrectionTask:
     def __init__(self, logger=None):
         self.logger = logger or logging.getLogger(__name__)
         self.task_name = "Orientation Correction"
-        self.task_id = "task_3_orientation_correction"
+        self.task_id = "task_1_orientation_correction"
         
     def run(self, input_file, file_type, output_folder):
         """
@@ -35,7 +35,7 @@ class OrientationCorrectionTask:
             self.logger.info(f"🔄 Running {self.task_name} on {os.path.basename(input_file)}")
             
             # Create task-specific output folder
-            task_output = os.path.join(output_folder, "task3_orientation_correction")
+            task_output = os.path.join(output_folder, "task1_orientation_correction")
             os.makedirs(task_output, exist_ok=True)
             
             # Process based on file type
@@ -91,8 +91,16 @@ class OrientationCorrectionTask:
             orientation_3 = self._analyze_reading_direction(gray)
             self.logger.info(f"   📊 Reading direction: {orientation_3}°")
             
-            # Step 2: ML consensus decision
-            final_orientation = self._ml_consensus([orientation_1, orientation_2, orientation_3])
+            # Method 4: Zebra stripe analysis (NEW - based on row sum patterns)
+            orientation_4 = self._analyze_zebra_stripes(gray)
+            self.logger.info(f"   📊 Zebra stripe pattern: {orientation_4}°")
+            
+            # Step 2: Feature analysis and smart method selection
+            features = self._analyze_image_features(gray)
+            self.logger.info(f"   🔍 Image features: {features}")
+            
+            # Step 3: Smart consensus based on image characteristics
+            final_orientation = self._smart_consensus_with_features([orientation_1, orientation_2, orientation_3, orientation_4], features, filename)
             self.logger.info(f"   🎯 Final orientation: {final_orientation}°")
             
             # Step 3: Apply rotation correction
@@ -109,7 +117,7 @@ class OrientationCorrectionTask:
             
             # Create and save comparison image
             comparison = self._create_comparison_image(image, corrected_image, filename, 
-                                                     final_orientation, [orientation_1, orientation_2, orientation_3])
+                                                     final_orientation, [orientation_1, orientation_2, orientation_3, orientation_4])
             comparison_path = os.path.join(output_folder, f"{base_name}_comparison.png")
             cv2.imwrite(comparison_path, comparison)
             self.logger.info(f"💾 Comparison image saved: {comparison_path}")
@@ -118,7 +126,7 @@ class OrientationCorrectionTask:
                 'input': image_path,
                 'output': corrected_path,
                 'comparison': comparison_path,
-                'orientations': [orientation_1, orientation_2, orientation_3],
+                'orientations': [orientation_1, orientation_2, orientation_3, orientation_4],
                 'final_orientation': final_orientation,
                 'status': 'completed',
                 'task': self.task_id
@@ -172,23 +180,15 @@ class OrientationCorrectionTask:
             return None
     
     def _analyze_text_structure(self, gray):
-        """Fast text structure analysis for orientation detection"""
-        
-        # Resize for speed if image is too large
-        max_dim = 800
-        if max(gray.shape) > max_dim:
-            scale = max_dim / max(gray.shape)
-            new_width = int(gray.shape[1] * scale)
-            new_height = int(gray.shape[0] * scale)
-            gray = cv2.resize(gray, (new_width, new_height), interpolation=cv2.INTER_AREA)
+        """Analyze text structure to determine orientation"""
         
         height, width = gray.shape
         
         # Create binary image
         _, binary = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
         
-        # Test different angles (fast version: only 0° and 180°)
-        angles = [0, 180]
+        # Test different angles
+        angles = [0, 90, 180, 270]
         best_angle = 0
         best_structure_score = 0
         
@@ -196,8 +196,10 @@ class OrientationCorrectionTask:
             if angle == 0:
                 rotated = binary
             else:
-                # Fast 180° rotation (flip both axes)
-                rotated = cv2.flip(cv2.flip(binary, 0), 1)
+                # Rotate image
+                center = (width // 2, height // 2)
+                rotation_matrix = cv2.getRotationMatrix2D(center, angle, 1.0)
+                rotated = cv2.warpAffine(binary, rotation_matrix, (width, height))
             
             # Analyze text structure
             structure_score = self._calculate_structure_score(rotated)
@@ -339,23 +341,15 @@ class OrientationCorrectionTask:
         return structure_score
     
     def _analyze_character_patterns(self, gray):
-        """Fast character pattern analysis for orientation detection"""
-        
-        # Resize for speed if image is too large
-        max_dim = 600
-        if max(gray.shape) > max_dim:
-            scale = max_dim / max(gray.shape)
-            new_width = int(gray.shape[1] * scale)
-            new_height = int(gray.shape[0] * scale)
-            gray = cv2.resize(gray, (new_width, new_height), interpolation=cv2.INTER_AREA)
+        """Analyze character patterns for orientation detection"""
         
         height, width = gray.shape
         
         # Create binary image
         _, binary = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
         
-        # Test different angles (fast version: only 0° and 180°)
-        angles = [0, 180]
+        # Test different angles
+        angles = [0, 90, 180, 270]
         best_angle = 0
         best_pattern_score = 0
         
@@ -363,8 +357,10 @@ class OrientationCorrectionTask:
             if angle == 0:
                 rotated = binary
             else:
-                # Fast 180° rotation (flip both axes)
-                rotated = cv2.flip(cv2.flip(binary, 0), 1)
+                # Rotate image
+                center = (width // 2, height // 2)
+                rotation_matrix = cv2.getRotationMatrix2D(center, angle, 1.0)
+                rotated = cv2.warpAffine(binary, rotation_matrix, (width, height))
             
             # Analyze character patterns
             pattern_score = self._calculate_pattern_score(rotated)
@@ -518,23 +514,15 @@ class OrientationCorrectionTask:
         return pattern_score
     
     def _analyze_reading_direction(self, gray):
-        """Fast reading direction analysis for orientation detection"""
-        
-        # Resize for speed if image is too large
-        max_dim = 500
-        if max(gray.shape) > max_dim:
-            scale = max_dim / max(gray.shape)
-            new_width = int(gray.shape[1] * scale)
-            new_height = int(gray.shape[0] * scale)
-            gray = cv2.resize(gray, (new_width, new_height), interpolation=cv2.INTER_AREA)
+        """Analyze reading direction for orientation detection"""
         
         height, width = gray.shape
         
         # Create binary image
         _, binary = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
         
-        # Test different angles (fast version: only 0° and 180°)
-        angles = [0, 180]
+        # Test different angles
+        angles = [0, 90, 180, 270]
         best_angle = 0
         best_reading_score = 0
         
@@ -542,8 +530,10 @@ class OrientationCorrectionTask:
             if angle == 0:
                 rotated = binary
             else:
-                # Fast 180° rotation (flip both axes)
-                rotated = cv2.flip(cv2.flip(binary, 0), 1)
+                # Rotate image
+                center = (width // 2, height // 2)
+                rotation_matrix = cv2.getRotationMatrix2D(center, angle, 1.0)
+                rotated = cv2.warpAffine(binary, rotation_matrix, (width, height))
             
             # Analyze reading direction
             reading_score = self._calculate_reading_score(rotated)
@@ -553,6 +543,389 @@ class OrientationCorrectionTask:
                 best_angle = angle
         
         return best_angle
+    
+    def _analyze_zebra_stripes(self, gray):
+        """Analyze zebra stripe patterns to determine orientation (based on row sum analysis)"""
+        
+        height, width = gray.shape
+        
+        # Resize for speed if image is too large
+        max_dim = 800
+        if max(gray.shape) > max_dim:
+            scale = max_dim / max(gray.shape)
+            new_width = int(gray.shape[1] * scale)
+            new_height = int(gray.shape[0] * scale)
+            gray = cv2.resize(gray, (new_width, new_height), interpolation=cv2.INTER_AREA)
+            height, width = gray.shape
+        
+        # Create binary image (invert like in the original code)
+        src = 255 - gray  # Invert like the original code
+        _, binary = cv2.threshold(src, 140, 255, cv2.THRESH_BINARY)
+        
+        # Make square for consistent rotation (crop center like original)
+        small_dimension = min(height, width)
+        src_square = binary[:small_dimension, :small_dimension]
+        
+        # Test different angles
+        angles = [0, 90, 180, 270]
+        best_angle = 0
+        best_zebra_score = 0
+        
+        for angle in angles:
+            # Rotate image
+            rotated = self._rotate_image(src_square, angle)
+            
+            # Crop center region for analysis (like original code)
+            h, w = rotated.shape
+            buffer = min(h, w) - int(min(h, w) / 1.5)
+            roi = rotated[int(h/2-buffer):int(h/2+buffer), int(w/2-buffer):int(w/2+buffer)]
+            
+            # Calculate row sums (zebra stripe analysis)
+            zebra_score = self._calculate_zebra_score(roi)
+            
+            if zebra_score > best_zebra_score:
+                best_zebra_score = zebra_score
+                best_angle = angle
+        
+        return best_angle
+    
+    def _rotate_image(self, image, angle):
+        """Rotate image by given angle"""
+        
+        if angle == 0:
+            return image
+        
+        rows, cols = image.shape
+        center = (cols/2, rows/2)
+        M = cv2.getRotationMatrix2D(center, angle, 1)
+        rotated = cv2.warpAffine(image, M, (cols, rows))
+        return rotated
+    
+    def _calculate_zebra_score(self, roi):
+        """Calculate zebra stripe score based on row sum patterns (FIXED)"""
+        
+        if roi.shape[0] < 10:  # Too small to analyze
+            return 0
+        
+        # Calculate row sums like in the original code
+        row_sums = []
+        for r in range(roi.shape[0]):
+            row_sum = np.sum(roi[r, :])
+            row_sums.append(row_sum)
+        
+        if not row_sums or max(row_sums) == 0:
+            return 0
+        
+        # Normalize row sums to (0, 1) for better analysis
+        max_sum = max(row_sums)
+        normalized_sums = [rs / max_sum for rs in row_sums]
+        
+        # FIXED: Better zebra pattern detection
+        # Well-oriented text should have:
+        # 1. Clear alternating pattern (text lines vs white space)
+        # 2. Multiple peaks (text lines)
+        # 3. Consistent spacing between peaks
+        
+        # Find peaks (text lines) using a simple threshold
+        threshold = np.mean(normalized_sums) + 0.1 * np.std(normalized_sums)
+        peaks = []
+        for i, val in enumerate(normalized_sums):
+            if val > threshold:
+                # Check if this is a local maximum
+                is_peak = True
+                for j in range(max(0, i-2), min(len(normalized_sums), i+3)):
+                    if j != i and normalized_sums[j] > val:
+                        is_peak = False
+                        break
+                if is_peak:
+                    peaks.append(i)
+        
+        # Merge nearby peaks (same text line)
+        merged_peaks = []
+        if peaks:
+            merged_peaks.append(peaks[0])
+            for peak in peaks[1:]:
+                if peak - merged_peaks[-1] > 3:  # Minimum distance between lines
+                    merged_peaks.append(peak)
+        
+        # Calculate zebra score based on:
+        # 1. Number of text lines detected
+        # 2. Spacing consistency between lines
+        # 3. Overall pattern strength
+        
+        num_lines = len(merged_peaks)
+        if num_lines < 2:
+            return 0.1  # Very low score for no pattern
+        
+        # Calculate spacing between lines
+        line_spacings = []
+        for i in range(1, len(merged_peaks)):
+            spacing = merged_peaks[i] - merged_peaks[i-1]
+            line_spacings.append(spacing)
+        
+        # Spacing consistency (lower variance = better)
+        if len(line_spacings) > 1:
+            spacing_variance = np.var(line_spacings)
+            spacing_mean = np.mean(line_spacings)
+            spacing_consistency = 1.0 / (1.0 + spacing_variance / (spacing_mean ** 2))
+        else:
+            spacing_consistency = 0.5
+        
+        # Pattern strength (how clear the peaks are)
+        if len(normalized_sums) > 0:
+            pattern_strength = np.std(normalized_sums)  # Higher std = clearer pattern
+        else:
+            pattern_strength = 0
+        
+        # Content density (amount of text)
+        content_density = np.mean(normalized_sums)
+        
+        # Combine scores with better weighting
+        zebra_score = (
+            0.3 * min(num_lines / 10.0, 1.0) +      # Number of lines (capped at 10)
+            0.3 * spacing_consistency +             # Spacing consistency
+            0.2 * min(pattern_strength, 1.0) +      # Pattern clarity
+            0.2 * min(content_density, 1.0)         # Content amount
+        )
+        
+        return min(zebra_score, 1.0)
+    
+    def _analyze_image_features(self, gray):
+        """Analyze image features to determine which orientation method works best"""
+        
+        height, width = gray.shape
+        
+        # Create binary image for analysis
+        _, binary = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+        
+        features = {}
+        
+        # 1. Image size and aspect ratio
+        features['width'] = width
+        features['height'] = height
+        features['aspect_ratio'] = width / height
+        features['total_pixels'] = width * height
+        features['is_large'] = features['total_pixels'] > 1000000  # > 1MP
+        
+        # 2. Text density and distribution
+        text_pixels = np.sum(binary > 0)
+        features['text_density'] = text_pixels / (width * height)
+        features['is_text_heavy'] = features['text_density'] > 0.15
+        
+        # 3. Text structure characteristics
+        # Find connected components (characters/words)
+        num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(binary, connectivity=8)
+        
+        if num_labels > 2:
+            # Filter out small noise
+            valid_components = []
+            for i in range(1, num_labels):
+                area = stats[i, cv2.CC_STAT_AREA]
+                if area >= 20:  # Minimum character size
+                    valid_components.append(i)
+            
+            features['num_text_components'] = len(valid_components)
+            features['has_many_components'] = len(valid_components) > 50
+            
+            # Analyze component sizes
+            if valid_components:
+                component_areas = [stats[i, cv2.CC_STAT_AREA] for i in valid_components]
+                features['avg_component_size'] = np.mean(component_areas)
+                features['component_size_variance'] = np.var(component_areas)
+        else:
+            features['num_text_components'] = 0
+            features['has_many_components'] = False
+            features['avg_component_size'] = 0
+            features['component_size_variance'] = 0
+        
+        # 4. Line structure analysis
+        horizontal_kernel = np.ones((1, 20), np.uint8)
+        horizontal_lines = cv2.morphologyEx(binary, cv2.MORPH_OPEN, horizontal_kernel)
+        line_contours, _ = cv2.findContours(horizontal_lines, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        
+        valid_lines = []
+        for contour in line_contours:
+            area = cv2.contourArea(contour)
+            if area > 50:
+                x, y, w, h = cv2.boundingRect(contour)
+                aspect_ratio = w / (h + 1e-6)
+                if aspect_ratio > 3:  # Wide lines
+                    valid_lines.append((w, h))
+        
+        features['num_text_lines'] = len(valid_lines)
+        features['has_clear_lines'] = len(valid_lines) > 3
+        
+        # 5. Reading direction reliability indicators
+        features['reading_reliability'] = self._assess_reading_direction_reliability(binary, features)
+        
+        # 6. Method conflict analysis
+        features['has_method_conflicts'] = False  # Will be set in consensus
+        
+        # 7. Document type classification
+        features['document_type'] = self._classify_document_type(features)
+        
+        return features
+    
+    def _assess_reading_direction_reliability(self, binary_image, features):
+        """Assess how reliable the reading direction method is for this image"""
+        
+        height, width = binary_image.shape
+        
+        reliability_score = 0.5  # Start with neutral
+        
+        # 1. Text line consistency - reading direction works best with clear lines
+        if features['has_clear_lines']:
+            reliability_score += 0.2
+        
+        # 2. Component distribution - reading direction works well with well-distributed text
+        if features['has_many_components'] and not features['is_text_heavy']:
+            reliability_score += 0.2
+        
+        # 3. Aspect ratio - reading direction works better on documents vs. square images
+        if 0.7 <= features['aspect_ratio'] <= 1.5:  # Document-like aspect ratios
+            reliability_score += 0.1
+        
+        # 4. Large scanned documents - reading direction excels here
+        if features['is_large'] and features['text_density'] < 0.05:
+            reliability_score += 0.3
+        
+        # 5. Text flow analysis - check if text appears to flow horizontally
+        horizontal_flow_score = self._measure_horizontal_text_flow(binary_image)
+        reliability_score += 0.2 * horizontal_flow_score
+        
+        return min(reliability_score, 1.0)
+    
+    def _measure_horizontal_text_flow(self, binary_image):
+        """Measure how much the text flows horizontally (0=vertical, 1=horizontal)"""
+        
+        height, width = binary_image.shape
+        
+        # Calculate horizontal vs vertical projection strengths
+        horizontal_projection = np.sum(binary_image, axis=1)  # Sum across width
+        vertical_projection = np.sum(binary_image, axis=0)    # Sum across height
+        
+        # Variance indicates how "striped" the projection is
+        h_variance = np.var(horizontal_projection) if len(horizontal_projection) > 1 else 0
+        v_variance = np.var(vertical_projection) if len(vertical_projection) > 1 else 0
+        
+        if h_variance + v_variance == 0:
+            return 0.5
+        
+        # Higher horizontal variance = more horizontal text flow
+        horizontal_ratio = h_variance / (h_variance + v_variance)
+        return horizontal_ratio
+    
+    def _classify_document_type(self, features):
+        """Classify the document type based on features"""
+        
+        if features['is_large'] and features['text_density'] < 0.1:
+            return 'scanned_document'  # Large, low density (like PDFs)
+        elif features['has_clear_lines'] and features['has_many_components']:
+            return 'dense_text'  # Clear text structure
+        elif features['text_density'] > 0.2:
+            return 'dense_content'  # High text density
+        elif features['num_text_components'] < 20:
+            return 'sparse_text'  # Few text elements
+        else:
+            return 'mixed_content'
+    
+    def _smart_consensus_with_features(self, orientations, features, filename):
+        """Smart consensus that selects the best method based purely on image features (filename-blind)"""
+        
+        # orientations = [text_structure, character_patterns, reading_direction, zebra_stripes]
+        method_names = ['text_structure', 'character_patterns', 'reading_direction', 'zebra_stripes']
+        
+        self.logger.info(f"   🧠 Smart consensus for {filename} ({features['document_type']})")
+        self.logger.info(f"   📊 Methods: {dict(zip(method_names, orientations))}")
+        self.logger.info(f"   📈 Reading reliability: {features['reading_reliability']:.3f}")
+        
+        from collections import Counter
+        orientation_counts = Counter(orientations)
+        most_common = orientation_counts.most_common(1)[0][0]
+        max_count = orientation_counts[most_common]
+        
+        # NEW RULE 0: High reading direction reliability override (with conflict check)
+        if features['reading_reliability'] > 0.9:  # Increased threshold for automatic trust
+            reading_direction_result = orientations[2]  # reading_direction method
+            # Check if reading_direction conflicts with 2+ other methods
+            reading_conflicts = sum(1 for o in orientations[:2] + orientations[3:] if o != reading_direction_result)
+            if reading_conflicts >= 2:
+                self.logger.info(f"   ⚠️  High reading reliability ({features['reading_reliability']:.3f}) but conflicts with {reading_conflicts} methods → proceeding to consensus")
+            else:
+                self.logger.info(f"   🎯 Very high reading reliability ({features['reading_reliability']:.3f}) → using reading_direction: {reading_direction_result}°")
+                return reading_direction_result
+        
+        # RULE 1: Strong consensus (3+ methods agree) - but check for reading direction override
+        if max_count >= 3:
+            # Special case: if reading direction says 0° with high reliability, be very cautious about rotating
+            if orientations[2] == 0 and features['reading_reliability'] > 0.95 and most_common != 0:
+                self.logger.info(f"   ⚠️  Strong consensus for {most_common}° but reading_direction (0°) has very high reliability ({features['reading_reliability']:.3f}) → staying at 0°")
+                return 0
+            self.logger.info(f"   🎯 Strong consensus: {most_common}° ({max_count}/4 methods agree)")
+            return most_common
+        
+        # RULE 2: Moderate consensus (2 methods agree) - check method reliability
+        elif max_count >= 2:
+            # Check which 2 methods agree and prioritize reliable combinations
+            agreeing_methods = []
+            for i, orientation in enumerate(orientations):
+                if orientation == most_common:
+                    agreeing_methods.append(method_names[i])
+            
+            self.logger.info(f"   🎯 Moderate consensus: {most_common}° (methods: {agreeing_methods})")
+            
+            # Prioritize certain method combinations based on reliability
+            if 'text_structure' in agreeing_methods and 'reading_direction' in agreeing_methods:
+                self.logger.info(f"   ✅ Reliable combination: text_structure + reading_direction")
+                return most_common
+            elif 'character_patterns' in agreeing_methods and 'reading_direction' in agreeing_methods:
+                self.logger.info(f"   ✅ Reliable combination: character_patterns + reading_direction")
+                return most_common
+            elif 'text_structure' in agreeing_methods and 'character_patterns' in agreeing_methods:
+                self.logger.info(f"   ✅ Reliable combination: text_structure + character_patterns")
+                return most_common
+            else:
+                self.logger.info(f"   ⚠️  Moderate consensus accepted")
+                return most_common
+        
+        # RULE 3: No clear consensus - use feature-based method selection
+        else:
+            self.logger.info(f"   🔍 No consensus, using feature-based method selection")
+            
+            # Check if reading_direction has medium+ reliability in conflict situations (more conservative)
+            if features['reading_reliability'] > 0.75 and orientations[2] == 0:  # Only trust reading_direction for "no rotation" when highly reliable
+                self.logger.info(f"   🛡️  High reading reliability ({features['reading_reliability']:.3f}) for no-rotation: Using reading_direction method")
+                return orientations[2]  # reading_direction
+            
+            # For large scanned documents, trust reading_direction
+            elif features['document_type'] == 'scanned_document':
+                self.logger.info(f"   🛡️  Scanned document: Using reading_direction method")
+                return orientations[2]  # reading_direction
+            
+            # For documents with clear text structure, trust text_structure
+            elif features['has_clear_lines'] and features['has_many_components']:
+                self.logger.info(f"   🛡️  Clear text structure: Using text_structure method")
+                return orientations[0]  # text_structure
+            
+            # For dense content, trust character_patterns
+            elif features['is_text_heavy'] and features['has_many_components']:
+                self.logger.info(f"   🛡️  Dense text content: Using character_patterns method")
+                return orientations[1]  # character_patterns
+            
+            # For documents with good line structure, trust reading_direction
+            elif features['has_clear_lines']:
+                self.logger.info(f"   🛡️  Good line structure: Using reading_direction method")
+                return orientations[2]  # reading_direction
+            
+            # Default: trust reading_direction for most documents (it's generally most reliable)
+            elif features['reading_reliability'] > 0.4:
+                self.logger.info(f"   🛡️  Default to reading_direction (reliability: {features['reading_reliability']:.3f})")
+                return orientations[2]  # reading_direction
+            
+            # Last resort: no rotation if reading_direction also seems unreliable
+            else:
+                self.logger.info(f"   🛡️  Conservative fallback: No rotation (low reading reliability: {features['reading_reliability']:.3f})")
+                return 0
     
     def _fast_reading_score(self, binary_image):
         """Calculate reading direction score (original fast algorithm)"""
@@ -791,25 +1164,56 @@ class OrientationCorrectionTask:
         return reading_score
     
     def _ml_consensus(self, orientations):
-        """Simplified consensus for PaddleX-based detection"""
+        """Smart conservative consensus that carefully balances accuracy vs safety"""
         
         # Debug logging
         self.logger.info(f"   🔍 Debug: orientations={orientations}")
         
-        # If PaddleX is working, all three methods should give the same result
-        # Just return the most common orientation
         from collections import Counter
         orientation_counts = Counter(orientations)
         most_common = orientation_counts.most_common(1)[0][0]
         
-        # If there's a clear winner (at least 2 methods agree), use it
+        # SMART RULE 1: If 3+ methods agree on the SAME non-zero angle, and no method says 0°, trust it
+        if orientation_counts[most_common] >= 3 and most_common != 0:
+            zero_count = orientation_counts.get(0, 0)
+            if zero_count == 0:  # No method thinks it's already correct
+                self.logger.info(f"   ✅ Strong consensus for rotation: {most_common}° ({orientation_counts[most_common]}/4 methods agree, no 0° votes)")
+                return most_common
+        
+        # SMART RULE 1B: If 2+ methods agree on the SAME non-zero angle, and zebra stripes also agrees, trust it
+        if orientation_counts[most_common] >= 2 and most_common != 0:
+            if len(orientations) >= 4 and orientations[3] == most_common:  # Zebra stripes agrees
+                self.logger.info(f"   ✅ Good consensus with zebra confirmation: {most_common}° ({orientation_counts[most_common]}/4 methods agree, zebra stripes confirms)")
+                return most_common
+        
+        # SMART RULE 2: If there's a 4-way split with different angles, be conservative  
+        if len(orientation_counts) == 4:  # All methods disagree
+            self.logger.info(f"   🛡️  Conservative: All methods disagree → staying at 0°")
+            return 0
+            
+        # SMART RULE 3: If any method says 0° and there's disagreement about rotation direction, stay at 0°
+        if 0 in orientations:
+            # Check if the non-zero orientations agree on direction
+            non_zero_orientations = [o for o in orientations if o != 0]
+            if len(set(non_zero_orientations)) > 1:  # Multiple different non-zero angles
+                self.logger.info(f"   🛡️  Conservative: Method disagreement with 0° vote → staying at 0°")
+                return 0
+        
+        # SMART RULE 4: Special case for 180° rotation - be extra careful
+        if most_common == 180 and orientation_counts[most_common] == 2:
+            zero_count = orientation_counts.get(0, 0)
+            if zero_count == 1:  # One method thinks it's already correct
+                self.logger.info(f"   🛡️  Conservative: Uncertain about 180° rotation (1 method says 0°) → staying at 0°")
+                return 0
+        
+        # SMART RULE 5: If we get here and there's still majority agreement, trust it
         if orientation_counts[most_common] >= 2:
-            self.logger.info(f"   ✅ Clear consensus: {most_common}° ({orientation_counts[most_common]}/3 methods agree)")
+            self.logger.info(f"   ✅ Majority consensus: {most_common}° ({orientation_counts[most_common]}/4 methods agree)")
             return most_common
         
-        # If no clear consensus, use the first method (text structure) as fallback
-        self.logger.info(f"   ⚠️  No clear consensus, using text structure result: {orientations[0]}°")
-        return orientations[0]
+        # SMART RULE 6: Default to 0° if no clear pattern
+        self.logger.info(f"   🛡️  Conservative: No clear consensus → defaulting to 0° (no rotation)")
+        return 0
     
     def _fallback_text_structure_analysis(self, gray):
         """Fallback text structure analysis using heuristics"""
@@ -1208,7 +1612,7 @@ class OrientationCorrectionTask:
         cv2.putText(comparison, "Oriented", (width + 50, 50), font, font_scale, color, thickness)
         
         # Add analysis info
-        info_text = f"Text structure: {orientations[0]}° | Character patterns: {orientations[1]}° | Reading direction: {orientations[2]}°"
+        info_text = f"Text structure: {orientations[0]}° | Character patterns: {orientations[1]}° | Reading direction: {orientations[2]}° | Zebra stripes: {orientations[3]}°"
         cv2.putText(comparison, info_text, (50, height - 30), font, 0.6, (255, 255, 255), 1)
         
         # Add final orientation info

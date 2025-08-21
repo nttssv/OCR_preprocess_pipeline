@@ -10,10 +10,12 @@ import logging
 from pathlib import Path
 
 # Import individual task classes
-from .task_1_skew_detection import SkewDetectionTask
-from .task_2_cropping import DocumentCroppingTask
-from .task_3_size_dpi_standardization import SizeDPIStandardizationTask
-from .task_4_orientation_correction import OrientationCorrectionTask
+from .task_1_orientation_correction import OrientationCorrectionTask
+from .task_2_skew_detection import SkewDetectionTask
+from .task_3_cropping import DocumentCroppingTask
+from .task_4_size_dpi_standardization import SizeDPIStandardizationTask
+from .task_5_noise_reduction import NoiseReductionTask
+from .task_6_contrast_enhancement import ContrastEnhancementTask
 
 class TaskManager:
     """Manages all pipeline tasks"""
@@ -23,26 +25,32 @@ class TaskManager:
         
         # Initialize all tasks
         self.tasks = {
-            "task_1_skew_detection": SkewDetectionTask(logger),
-            "task_2_cropping": DocumentCroppingTask(logger),
-            "task_3_size_dpi_standardization": SizeDPIStandardizationTask(logger),
-            "task_4_orientation_correction": OrientationCorrectionTask(logger)
+            "task_1_orientation_correction": OrientationCorrectionTask(logger),
+            "task_2_skew_detection": SkewDetectionTask(logger),
+            "task_3_cropping": DocumentCroppingTask(logger),
+            "task_4_size_dpi_standardization": SizeDPIStandardizationTask(logger),
+            "task_5_noise_reduction": NoiseReductionTask(),
+            "task_6_contrast_enhancement": ContrastEnhancementTask()
         }
         
         # Task dependencies
         self.dependencies = {
-            "task_1_skew_detection": [],
-            "task_2_cropping": ["task_1_skew_detection"],
-            "task_3_size_dpi_standardization": ["task_2_cropping"],
-            "task_4_orientation_correction": ["task_3_size_dpi_standardization"]
+            "task_1_orientation_correction": [],
+            "task_2_skew_detection": ["task_1_orientation_correction"],
+            "task_3_cropping": ["task_2_skew_detection"],
+            "task_4_size_dpi_standardization": ["task_3_cropping"],
+            "task_5_noise_reduction": ["task_4_size_dpi_standardization"],
+            "task_6_contrast_enhancement": ["task_5_noise_reduction"]
         }
         
-        # Task execution order
+                # Task execution order
         self.execution_order = [
-            "task_1_skew_detection",
-            "task_2_cropping", 
-            "task_3_size_dpi_standardization",
-            "task_4_orientation_correction"
+            "task_1_orientation_correction",
+            "task_2_skew_detection",
+            "task_3_cropping",
+            "task_4_size_dpi_standardization",
+            "task_5_noise_reduction",
+            "task_6_contrast_enhancement"
         ]
     
     def get_task(self, task_id):

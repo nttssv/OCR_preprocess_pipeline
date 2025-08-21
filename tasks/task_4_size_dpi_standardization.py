@@ -37,7 +37,7 @@ class SizeDPIStandardizationTask:
             self.logger.info(f"🔄 Running {self.task_name} on {os.path.basename(input_file)}")
             
             # Create task-specific output folder
-            task_output = os.path.join(output_folder, "task3_size_dpi_standardization")
+            task_output = os.path.join(output_folder, "task4_size_dpi_standardization")
             os.makedirs(task_output, exist_ok=True)
             
             if file_type == 'pdf':
@@ -124,15 +124,20 @@ class SizeDPIStandardizationTask:
             scale_factor = max(target_width / width, target_height / height)
             
             if scale_factor > 1.0:
-                # Upscaling: Use Lanczos for best quality, then sharpen
-                self.logger.info(f"   📏 Upscaling by {scale_factor:.2f}x - using Lanczos interpolation")
-                resized_image = cv2.resize(image, (target_width, target_height), 
-                                         interpolation=cv2.INTER_LANCZOS4)
+                # Upscaling: Use different strategies based on scale factor
+                if scale_factor > 4.0:
+                    # Very high upscaling - use multi-step approach for better quality
+                    self.logger.info(f"   📏 High upscaling by {scale_factor:.2f}x - using multi-step approach")
+                    resized_image = self._multi_step_upscale(image, target_width, target_height)
+                else:
+                    # Moderate upscaling - use Lanczos
+                    self.logger.info(f"   📏 Upscaling by {scale_factor:.2f}x - using Lanczos interpolation")
+                    resized_image = cv2.resize(image, (target_width, target_height), 
+                                             interpolation=cv2.INTER_LANCZOS4)
                 
-                # Apply sharpening after upscaling to reduce blur
-                self.logger.info(f"   🔪 Applying sharpening filter after upscaling...")
-                sharpened = self._sharpen_image(resized_image)
-                resized_image = sharpened
+                # Apply advanced sharpening after upscaling to reduce blur
+                self.logger.info(f"   🔪 Applying advanced sharpening after upscaling...")
+                resized_image = self._advanced_sharpen_image(resized_image, scale_factor)
             else:
                 # Downscaling: Use INTER_AREA for best quality
                 self.logger.info(f"   📏 Downscaling by {scale_factor:.2f}x - using INTER_AREA interpolation")
@@ -184,32 +189,44 @@ class SizeDPIStandardizationTask:
             return None, None
     
     def _enhance_for_ocr(self, image):
-        """Enhance image for optimal OCR processing"""
+        """Very conservative enhancement that preserves background brightness"""
         
-        # Convert to grayscale for processing
+        # Convert to grayscale for analysis
         gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
         
-        # 1. Contrast enhancement using CLAHE
-        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
-        enhanced = clahe.apply(gray)
+        # Check if the image has bright background (most documents should)
+        mean_brightness = np.mean(gray)
+        is_bright_background = mean_brightness > 128
         
-        # 2. Noise reduction using bilateral filter
-        denoised = cv2.bilateralFilter(enhanced, 9, 75, 75)
-        
-        # 3. Sharpening using unsharp mask
-        gaussian = cv2.GaussianBlur(denoised, (0, 0), 2.0)
-        sharpened = cv2.addWeighted(denoised, 1.5, gaussian, -0.5, 0)
-        
-        # 4. Adaptive thresholding for better text separation
-        binary = cv2.adaptiveThreshold(sharpened, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
-                                     cv2.THRESH_BINARY, 11, 2)
-        
-        # 5. Morphological operations to clean up text
-        kernel = np.ones((1, 1), np.uint8)
-        cleaned = cv2.morphologyEx(binary, cv2.MORPH_CLOSE, kernel)
-        
-        # Convert back to BGR for output
-        enhanced_bgr = cv2.cvtColor(cleaned, cv2.COLOR_GRAY2BGR)
+        if not is_bright_background:
+            # For dark images, apply minimal processing to avoid darkening further
+            self.logger.info(f"   📝 Dark background detected (brightness: {mean_brightness:.1f}) - minimal processing")
+            
+            # Just light sharpening, no contrast adjustment
+            kernel = np.array([[ 0, -0.05,  0],
+                              [-0.05, 1.2, -0.05],
+                              [ 0, -0.05,  0]])
+            sharpened = cv2.filter2D(gray, -1, kernel)
+            enhanced_bgr = cv2.cvtColor(sharpened, cv2.COLOR_GRAY2BGR)
+            
+        else:
+            # For bright backgrounds, apply very gentle enhancement
+            self.logger.info(f"   📝 Bright background detected (brightness: {mean_brightness:.1f}) - gentle enhancement")
+            
+            # Very minimal CLAHE to avoid darkening
+            clahe = cv2.createCLAHE(clipLimit=1.1, tileGridSize=(32, 32))  # Even more conservative
+            enhanced = clahe.apply(gray)
+            
+            # Ensure we don't darken the image
+            enhanced = np.maximum(enhanced, gray)  # Take the brighter of original or enhanced
+            
+            # Very light sharpening only
+            kernel = np.array([[-0.05, -0.05, -0.05],
+                              [-0.05,  1.25, -0.05],
+                              [-0.05, -0.05, -0.05]])
+            sharpened = cv2.filter2D(enhanced, -1, kernel)
+            
+            enhanced_bgr = cv2.cvtColor(sharpened, cv2.COLOR_GRAY2BGR)
         
         return enhanced_bgr
     
@@ -234,6 +251,99 @@ class SizeDPIStandardizationTask:
         sharpened_uint8 = (sharpened * 255).astype(np.uint8)
         
         return sharpened_uint8
+    
+    def _multi_step_upscale(self, image, target_width, target_height):
+        """Multi-step upscaling for very high scale factors to reduce artifacts"""
+        
+        current_image = image.copy()
+        current_h, current_w = current_image.shape[:2]
+        
+        # Calculate how many steps we need (max 2x per step)
+        scale_w = target_width / current_w
+        scale_h = target_height / current_h
+        total_scale = max(scale_w, scale_h)
+        
+        steps = int(np.ceil(np.log2(total_scale)))
+        
+        for step in range(steps):
+            # Calculate intermediate target size
+            if step == steps - 1:
+                # Final step - reach exact target
+                next_w, next_h = target_width, target_height
+            else:
+                # Intermediate step - 2x scale
+                next_w = min(current_w * 2, target_width)
+                next_h = min(current_h * 2, target_height)
+            
+            # Upscale with Lanczos
+            current_image = cv2.resize(current_image, (next_w, next_h), 
+                                     interpolation=cv2.INTER_LANCZOS4)
+            
+            # Light sharpening after each step (except the last)
+            if step < steps - 1:
+                current_image = self._light_sharpen_image(current_image)
+            
+            current_w, current_h = next_w, next_h
+        
+        return current_image
+    
+    def _light_sharpen_image(self, image):
+        """Apply light sharpening during multi-step upscaling"""
+        kernel = np.array([[ 0, -0.5,  0],
+                          [-0.5, 3.0, -0.5],
+                          [ 0, -0.5,  0]])
+        return cv2.filter2D(image, -1, kernel)
+    
+    def _advanced_sharpen_image(self, image, scale_factor):
+        """Apply advanced sharpening based on scale factor"""
+        
+        if scale_factor > 6.0:
+            # Very high upscaling - aggressive sharpening needed
+            return self._aggressive_sharpen_image(image)
+        elif scale_factor > 3.0:
+            # High upscaling - strong sharpening
+            return self._strong_sharpen_image(image)
+        else:
+            # Moderate upscaling - standard sharpening
+            return self._sharpen_image(image)
+    
+    def _aggressive_sharpen_image(self, image):
+        """Aggressive sharpening for very high upscaling factors"""
+        
+        # Convert to float for better precision
+        image_float = image.astype(np.float32) / 255.0
+        
+        # First pass: Unsharp mask
+        blurred = cv2.GaussianBlur(image_float, (3, 3), 1.0)
+        unsharp = image_float + 0.8 * (image_float - blurred)
+        
+        # Second pass: Edge enhancement
+        kernel = np.array([[-0.5, -1, -0.5],
+                          [-1,   7,  -1],
+                          [-0.5, -1, -0.5]])
+        enhanced = cv2.filter2D(unsharp, -1, kernel)
+        
+        # Combine and clip
+        result = np.clip(enhanced, 0, 1)
+        return (result * 255).astype(np.uint8)
+    
+    def _strong_sharpen_image(self, image):
+        """Strong sharpening for high upscaling factors"""
+        
+        image_float = image.astype(np.float32) / 255.0
+        
+        # Unsharp mask with stronger effect
+        blurred = cv2.GaussianBlur(image_float, (3, 3), 0.8)
+        unsharp = image_float + 0.6 * (image_float - blurred)
+        
+        # Edge sharpening kernel
+        kernel = np.array([[-0.25, -0.5, -0.25],
+                          [-0.5,   4.0,  -0.5],
+                          [-0.25, -0.5, -0.25]])
+        sharpened = cv2.filter2D(unsharp, -1, kernel)
+        
+        result = np.clip(sharpened, 0, 1)
+        return (result * 255).astype(np.uint8)
     
     def _create_comparison_image(self, original, processed, output_path, 
                                 orig_w, orig_h, new_w, new_h):

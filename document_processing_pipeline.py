@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 End-to-End Document Processing Pipeline
-Runs all document processing tasks in sequence: Skew Detection → Cropping → Orientation Correction
+Runs all document processing tasks in sequence: Orientation Correction → Skew Detection → Cropping → DPI Standardization
 """
 
 import os
@@ -52,25 +52,35 @@ class DocumentProcessingPipeline:
         
         # Pipeline configuration
         self.pipeline_config = {
-            "task_1_skew_detection": {
+            "task_1_orientation_correction": {
+                "name": "Orientation Correction",
+                "enabled": True,
+                "description": "Detect and correct upside-down or sideways pages"
+            },
+            "task_2_skew_detection": {
                 "name": "Skew Detection & Correction",
                 "enabled": True,
                 "description": "Detect and correct document skew angles"
             },
-            "task_2_cropping": {
+            "task_3_cropping": {
                 "name": "Document Cropping",
                 "enabled": True,
                 "description": "Remove blank borders, punch holes, and scanner edges"
             },
-            "task_3_size_dpi_standardization": {
+            "task_4_size_dpi_standardization": {
                 "name": "Size & DPI Standardization",
                 "enabled": True,
-                "description": "Standardize image dimensions and improve DPI to 300 for optimal OCR processing"
+                "description": "Standardize image dimensions and improve DPI to 250 for optimal OCR processing"
             },
-            "task_4_orientation_correction": {
-                "name": "Orientation Correction",
+            "task_5_noise_reduction": {
+                "name": "Noise Reduction & Denoising",
                 "enabled": True,
-                "description": "Detect and correct upside-down or sideways pages"
+                "description": "Remove noise, artifacts, and bleed-through from document images"
+            },
+            "task_6_contrast_enhancement": {
+                "name": "Contrast & Brightness Enhancement",
+                "enabled": True,
+                "description": "Enhance contrast, brightness, and text clarity using adaptive techniques"
             }
         }
     
@@ -121,56 +131,82 @@ class DocumentProcessingPipeline:
         self.logger.info(f"📁 Found {len(input_files)} input files")
         return input_files
     
-    def run_task_1_skew_detection(self, input_file, file_type):
-        """Run Task 1: Skew Detection and Correction"""
+    def run_task_1_orientation_correction(self, input_file, file_type):
+        """Run Task 1: Orientation Correction"""
         
         if not self.task_manager:
             self.logger.warning("⚠️  Task manager not available - skipping")
             return None
         
         try:
-            return self.task_manager.run_task("task_1_skew_detection", input_file, file_type, self.temp_folder)
+            return self.task_manager.run_task("task_1_orientation_correction", input_file, file_type, self.temp_folder)
         except Exception as e:
             self.logger.error(f"❌ Error in Task 1: {str(e)}")
             return None
     
-    def run_task_2_cropping(self, input_file, file_type):
-        """Run Task 2: Document Cropping"""
+    def run_task_2_skew_detection(self, input_file, file_type):
+        """Run Task 2: Skew Detection and Correction"""
         
         if not self.task_manager:
             self.logger.warning("⚠️  Task manager not available - skipping")
             return None
         
         try:
-            return self.task_manager.run_task("task_2_cropping", input_file, file_type, self.temp_folder)
+            return self.task_manager.run_task("task_2_skew_detection", input_file, file_type, self.temp_folder)
         except Exception as e:
             self.logger.error(f"❌ Error in Task 2: {str(e)}")
             return None
     
-    def run_task_3_size_dpi_standardization(self, input_file, file_type):
-        """Run Task 3: Size & DPI Standardization"""
+    def run_task_3_cropping(self, input_file, file_type):
+        """Run Task 3: Document Cropping"""
         
         if not self.task_manager:
             self.logger.warning("⚠️  Task manager not available - skipping")
             return None
         
         try:
-            return self.task_manager.run_task("task_3_size_dpi_standardization", input_file, file_type, self.temp_folder)
+            return self.task_manager.run_task("task_3_cropping", input_file, file_type, self.temp_folder)
         except Exception as e:
             self.logger.error(f"❌ Error in Task 3: {str(e)}")
             return None
     
-    def run_task_4_orientation_correction(self, input_file, file_type):
-        """Run Task 4: Orientation Correction"""
+    def run_task_4_size_dpi_standardization(self, input_file, file_type):
+        """Run Task 4: Size & DPI Standardization"""
         
         if not self.task_manager:
             self.logger.warning("⚠️  Task manager not available - skipping")
             return None
         
         try:
-            return self.task_manager.run_task("task_4_orientation_correction", input_file, file_type, self.temp_folder)
+            return self.task_manager.run_task("task_4_size_dpi_standardization", input_file, file_type, self.temp_folder)
         except Exception as e:
             self.logger.error(f"❌ Error in Task 4: {str(e)}")
+            return None
+    
+    def run_task_5_noise_reduction(self, input_file, file_type):
+        """Run Task 5: Noise Reduction & Denoising"""
+        
+        if not self.task_manager:
+            self.logger.warning("⚠️  Task manager not available - skipping")
+            return None
+        
+        try:
+            return self.task_manager.run_task("task_5_noise_reduction", input_file, file_type, self.temp_folder)
+        except Exception as e:
+            self.logger.error(f"❌ Error in Task 5: {str(e)}")
+            return None
+    
+    def run_task_6_contrast_enhancement(self, input_file, file_type):
+        """Run Task 6: Contrast & Brightness Enhancement"""
+        
+        if not self.task_manager:
+            self.logger.warning("⚠️  Task manager not available - skipping")
+            return None
+        
+        try:
+            return self.task_manager.run_task("task_6_contrast_enhancement", input_file, file_type, self.temp_folder)
+        except Exception as e:
+            self.logger.error(f"❌ Error in Task 6: {str(e)}")
             return None
     
     def run_pipeline(self):
@@ -200,14 +236,14 @@ class DocumentProcessingPipeline:
                 'timing': {}
             }
             
-            # Task 1: Skew Detection
-            if self.pipeline_config["task_1_skew_detection"]["enabled"]:
+            # Task 1: Orientation Correction
+            if self.pipeline_config["task_1_orientation_correction"]["enabled"]:
                 task1_start = time.time()
-                task1_result = self.run_task_1_skew_detection(file_path, file_type)
+                task1_result = self.run_task_1_orientation_correction(file_path, file_type)
                 task1_time = time.time() - task1_start
                 
-                file_results['tasks']['skew_detection'] = task1_result
-                file_results['timing']['skew_detection'] = task1_time
+                file_results['tasks']['orientation_correction'] = task1_result
+                file_results['timing']['orientation_correction'] = task1_time
                 
                 if task1_result:
                     # Use output from task 1 as input for task 2
@@ -224,14 +260,14 @@ class DocumentProcessingPipeline:
             else:
                 next_input = file_path
             
-            # Task 2: Cropping
-            if self.pipeline_config["task_2_cropping"]["enabled"]:
+            # Task 2: Skew Detection
+            if self.pipeline_config["task_2_skew_detection"]["enabled"]:
                 task2_start = time.time()
-                task2_result = self.run_task_2_cropping(next_input, file_type)
+                task2_result = self.run_task_2_skew_detection(next_input, file_type)
                 task2_time = time.time() - task2_start
                 
-                file_results['tasks']['cropping'] = task2_result
-                file_results['timing']['cropping'] = task2_time
+                file_results['tasks']['skew_detection'] = task2_result
+                file_results['timing']['skew_detection'] = task2_time
                 
                 if task2_result:
                     # Use output from task 2 as input for task 3
@@ -241,14 +277,14 @@ class DocumentProcessingPipeline:
                     self.logger.warning(f"⚠️  Task 2 failed after {task2_time:.2f}s, continuing with previous input")
                 # If task 2 failed, continue with previous input
             
-            # Task 3: Size & DPI Standardization
-            if self.pipeline_config["task_3_size_dpi_standardization"]["enabled"]:
+            # Task 3: Cropping
+            if self.pipeline_config["task_3_cropping"]["enabled"]:
                 task3_start = time.time()
-                task3_result = self.run_task_3_size_dpi_standardization(next_input, file_type)
+                task3_result = self.run_task_3_cropping(next_input, file_type)
                 task3_time = time.time() - task3_start
                 
-                file_results['tasks']['size_dpi_standardization'] = task3_result
-                file_results['timing']['size_dpi_standardization'] = task3_time
+                file_results['tasks']['cropping'] = task3_result
+                file_results['timing']['cropping'] = task3_time
                 
                 if task3_result:
                     # Use output from task 3 as input for task 4
@@ -257,19 +293,51 @@ class DocumentProcessingPipeline:
                 else:
                     self.logger.warning(f"⚠️  Task 3 failed after {task3_time:.2f}s")
             
-            # Task 4: Orientation Correction
-            if self.pipeline_config["task_4_orientation_correction"]["enabled"]:
+            # Task 4: Size & DPI Standardization
+            if self.pipeline_config["task_4_size_dpi_standardization"]["enabled"]:
                 task4_start = time.time()
-                task4_result = self.run_task_4_orientation_correction(next_input, file_type)
+                task4_result = self.run_task_4_size_dpi_standardization(next_input, file_type)
                 task4_time = time.time() - task4_start
                 
-                file_results['tasks']['orientation_correction'] = task4_result
-                file_results['timing']['orientation_correction'] = task4_time
+                file_results['tasks']['size_dpi_standardization'] = task4_result
+                file_results['timing']['size_dpi_standardization'] = task4_time
                 
                 if task4_result:
+                    # Use output from task 4 as input for task 5
+                    next_input = task4_result['output']
                     self.logger.info(f"✅ Task 4 completed in {task4_time:.2f}s")
                 else:
                     self.logger.warning(f"⚠️  Task 4 failed after {task4_time:.2f}s")
+            
+            # Task 5: Noise Reduction & Denoising
+            if self.pipeline_config["task_5_noise_reduction"]["enabled"]:
+                task5_start = time.time()
+                task5_result = self.run_task_5_noise_reduction(next_input, file_type)
+                task5_time = time.time() - task5_start
+                
+                file_results['tasks']['noise_reduction'] = task5_result
+                file_results['timing']['noise_reduction'] = task5_time
+                
+                if task5_result:
+                    # Use output from task 5 as input for task 6
+                    next_input = task5_result['output']
+                    self.logger.info(f"✅ Task 5 completed in {task5_time:.2f}s")
+                else:
+                    self.logger.warning(f"⚠️  Task 5 failed after {task5_time:.2f}s")
+            
+            # Task 6: Contrast & Brightness Enhancement
+            if self.pipeline_config["task_6_contrast_enhancement"]["enabled"]:
+                task6_start = time.time()
+                task6_result = self.run_task_6_contrast_enhancement(next_input, file_type)
+                task6_time = time.time() - task6_start
+                
+                file_results['tasks']['contrast_enhancement'] = task6_result
+                file_results['timing']['contrast_enhancement'] = task6_time
+                
+                if task6_result:
+                    self.logger.info(f"✅ Task 6 completed in {task6_time:.2f}s")
+                else:
+                    self.logger.warning(f"⚠️  Task 6 failed after {task6_time:.2f}s")
             
             # Calculate total file processing time
             file_total_time = time.time() - file_start_time
@@ -318,10 +386,13 @@ class DocumentProcessingPipeline:
             final_processed_image = None
             final_comparison_image = None
             
-            # Find the final processed image from the last successful task
-            if results['tasks'].get('orientation_correction') and results['tasks']['orientation_correction'].get('output'):
-                final_processed_image = results['tasks']['orientation_correction']['output']
-                final_comparison_image = results['tasks']['orientation_correction'].get('comparison')
+            # Find the final processed image from the last successful task (new order: orient → skew → crop → dpi → noise → contrast)
+            if results['tasks'].get('contrast_enhancement') and results['tasks']['contrast_enhancement'].get('output'):
+                final_processed_image = results['tasks']['contrast_enhancement']['output']
+                final_comparison_image = results['tasks']['contrast_enhancement'].get('comparison')
+            elif results['tasks'].get('noise_reduction') and results['tasks']['noise_reduction'].get('output'):
+                final_processed_image = results['tasks']['noise_reduction']['output']
+                final_comparison_image = results['tasks']['noise_reduction'].get('comparison')
             elif results['tasks'].get('size_dpi_standardization') and results['tasks']['size_dpi_standardization'].get('output'):
                 final_processed_image = results['tasks']['size_dpi_standardization']['output']
                 final_comparison_image = results['tasks']['size_dpi_standardization'].get('comparison')
@@ -331,6 +402,9 @@ class DocumentProcessingPipeline:
             elif results['tasks'].get('skew_detection') and results['tasks']['skew_detection'].get('output'):
                 final_processed_image = results['tasks']['skew_detection']['output']
                 final_comparison_image = results['tasks']['skew_detection'].get('comparison')
+            elif results['tasks'].get('orientation_correction') and results['tasks']['orientation_correction'].get('output'):
+                final_processed_image = results['tasks']['orientation_correction']['output']
+                final_comparison_image = results['tasks']['orientation_correction'].get('comparison')
             
             if final_processed_image and os.path.exists(final_processed_image):
                 # Create the final result file: {no}_xxx_result.png
@@ -340,7 +414,7 @@ class DocumentProcessingPipeline:
             
             # Create a comprehensive final comparison that includes skewness information
             if final_processed_image and os.path.exists(final_processed_image):
-                # Get skewness information from task 1
+                # Get skewness information from Task 2 (skew detection)
                 skew_angle = None
                 if results['tasks'].get('skew_detection') and results['tasks']['skew_detection'].get('angle'):
                     skew_angle = results['tasks']['skew_detection']['angle']
@@ -421,7 +495,7 @@ class DocumentProcessingPipeline:
                 cv2.putText(comparison, skew_text, (50, height - 60), font, 0.7, (255, 255, 0), 2)  # Yellow text
             
             # Add processing summary with better visibility
-            summary_text = f"Processing: Skew Detection → Cropping → Orientation Correction"
+            summary_text = f"Processing: Orientation Correction → Skew Detection → Cropping → DPI Standardization"
             # Add black outline for better visibility
             cv2.putText(comparison, summary_text, (50, height - 30), font, 0.6, (0, 0, 0), 3)  # Black outline
             cv2.putText(comparison, summary_text, (50, height - 30), font, 0.6, (0, 255, 255), 1)  # Cyan text
@@ -453,9 +527,12 @@ class DocumentProcessingPipeline:
         successful_tasks = 0
         failed_tasks = 0
         total_task_times = {
+            'orientation_correction': 0,
             'skew_detection': 0,
             'cropping': 0,
-            'orientation_correction': 0
+            'size_dpi_standardization': 0,
+            'noise_reduction': 0,
+            'contrast_enhancement': 0
         }
         
         for filename, results in self.pipeline_results.items():
