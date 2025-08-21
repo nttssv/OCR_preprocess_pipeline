@@ -62,7 +62,12 @@ class DocumentProcessingPipeline:
                 "enabled": True,
                 "description": "Remove blank borders, punch holes, and scanner edges"
             },
-            "task_3_orientation_correction": {
+            "task_3_size_dpi_standardization": {
+                "name": "Size & DPI Standardization",
+                "enabled": True,
+                "description": "Standardize image dimensions and improve DPI to 300 for optimal OCR processing"
+            },
+            "task_4_orientation_correction": {
                 "name": "Orientation Correction",
                 "enabled": True,
                 "description": "Detect and correct upside-down or sideways pages"
@@ -142,17 +147,30 @@ class DocumentProcessingPipeline:
             self.logger.error(f"❌ Error in Task 2: {str(e)}")
             return None
     
-    def run_task_3_orientation_correction(self, input_file, file_type):
-        """Run Task 3: Orientation Correction"""
+    def run_task_3_size_dpi_standardization(self, input_file, file_type):
+        """Run Task 3: Size & DPI Standardization"""
         
         if not self.task_manager:
             self.logger.warning("⚠️  Task manager not available - skipping")
             return None
         
         try:
-            return self.task_manager.run_task("task_3_orientation_correction", input_file, file_type, self.temp_folder)
+            return self.task_manager.run_task("task_3_size_dpi_standardization", input_file, file_type, self.temp_folder)
         except Exception as e:
             self.logger.error(f"❌ Error in Task 3: {str(e)}")
+            return None
+    
+    def run_task_4_orientation_correction(self, input_file, file_type):
+        """Run Task 4: Orientation Correction"""
+        
+        if not self.task_manager:
+            self.logger.warning("⚠️  Task manager not available - skipping")
+            return None
+        
+        try:
+            return self.task_manager.run_task("task_4_orientation_correction", input_file, file_type, self.temp_folder)
+        except Exception as e:
+            self.logger.error(f"❌ Error in Task 4: {str(e)}")
             return None
     
     def run_pipeline(self):
@@ -194,6 +212,10 @@ class DocumentProcessingPipeline:
                 if task1_result:
                     # Use output from task 1 as input for task 2
                     next_input = task1_result['output']
+                    # If Task 1 processed a PDF, update file_type to 'image' for subsequent tasks
+                    if file_type == 'pdf' and task1_result.get('note', '').startswith('PDF converted'):
+                        file_type = 'image'
+                        self.logger.info(f"🔄 Updated file_type from 'pdf' to 'image' for subsequent tasks")
                     self.logger.info(f"✅ Task 1 completed in {task1_time:.2f}s")
                 else:
                     # If task 1 failed, use original input
@@ -219,19 +241,35 @@ class DocumentProcessingPipeline:
                     self.logger.warning(f"⚠️  Task 2 failed after {task2_time:.2f}s, continuing with previous input")
                 # If task 2 failed, continue with previous input
             
-            # Task 3: Orientation Correction
-            if self.pipeline_config["task_3_orientation_correction"]["enabled"]:
+            # Task 3: Size & DPI Standardization
+            if self.pipeline_config["task_3_size_dpi_standardization"]["enabled"]:
                 task3_start = time.time()
-                task3_result = self.run_task_3_orientation_correction(next_input, file_type)
+                task3_result = self.run_task_3_size_dpi_standardization(next_input, file_type)
                 task3_time = time.time() - task3_start
                 
-                file_results['tasks']['orientation_correction'] = task3_result
-                file_results['timing']['orientation_correction'] = task3_time
+                file_results['tasks']['size_dpi_standardization'] = task3_result
+                file_results['timing']['size_dpi_standardization'] = task3_time
                 
                 if task3_result:
+                    # Use output from task 3 as input for task 4
+                    next_input = task3_result['output']
                     self.logger.info(f"✅ Task 3 completed in {task3_time:.2f}s")
                 else:
                     self.logger.warning(f"⚠️  Task 3 failed after {task3_time:.2f}s")
+            
+            # Task 4: Orientation Correction
+            if self.pipeline_config["task_4_orientation_correction"]["enabled"]:
+                task4_start = time.time()
+                task4_result = self.run_task_4_orientation_correction(next_input, file_type)
+                task4_time = time.time() - task4_start
+                
+                file_results['tasks']['orientation_correction'] = task4_result
+                file_results['timing']['orientation_correction'] = task4_time
+                
+                if task4_result:
+                    self.logger.info(f"✅ Task 4 completed in {task4_time:.2f}s")
+                else:
+                    self.logger.warning(f"⚠️  Task 4 failed after {task4_time:.2f}s")
             
             # Calculate total file processing time
             file_total_time = time.time() - file_start_time
@@ -272,9 +310,57 @@ class DocumentProcessingPipeline:
         final_output = os.path.join(self.output_folder, "pipeline_final_results")
         os.makedirs(final_output, exist_ok=True)
         
-        # Copy final results from each task
+        # Process each file to create final result and comparison
         for filename, results in self.pipeline_results.items():
-            file_output_dir = os.path.join(final_output, filename.replace('.', '_'))
+            base_name = os.path.splitext(filename)[0]
+            
+            # Get the final processed image (from the last successful task)
+            final_processed_image = None
+            final_comparison_image = None
+            
+            # Find the final processed image from the last successful task
+            if results['tasks'].get('orientation_correction') and results['tasks']['orientation_correction'].get('output'):
+                final_processed_image = results['tasks']['orientation_correction']['output']
+                final_comparison_image = results['tasks']['orientation_correction'].get('comparison')
+            elif results['tasks'].get('size_dpi_standardization') and results['tasks']['size_dpi_standardization'].get('output'):
+                final_processed_image = results['tasks']['size_dpi_standardization']['output']
+                final_comparison_image = results['tasks']['size_dpi_standardization'].get('comparison')
+            elif results['tasks'].get('cropping') and results['tasks']['cropping'].get('output'):
+                final_processed_image = results['tasks']['cropping']['output']
+                final_comparison_image = results['tasks']['cropping'].get('comparison')
+            elif results['tasks'].get('skew_detection') and results['tasks']['skew_detection'].get('output'):
+                final_processed_image = results['tasks']['skew_detection']['output']
+                final_comparison_image = results['tasks']['skew_detection'].get('comparison')
+            
+            if final_processed_image and os.path.exists(final_processed_image):
+                # Create the final result file: {no}_xxx_result.png
+                final_result_path = os.path.join(final_output, f"{base_name}_result.png")
+                shutil.copy2(final_processed_image, final_result_path)
+                self.logger.info(f"✅ Created final result: {final_result_path}")
+            
+            # Create a comprehensive final comparison that includes skewness information
+            if final_processed_image and os.path.exists(final_processed_image):
+                # Get skewness information from task 1
+                skew_angle = None
+                if results['tasks'].get('skew_detection') and results['tasks']['skew_detection'].get('angle'):
+                    skew_angle = results['tasks']['skew_detection']['angle']
+                
+                # Create comprehensive comparison
+                comprehensive_comparison = self._create_comprehensive_comparison(
+                    results['input_file'], 
+                    final_processed_image, 
+                    base_name,
+                    skew_angle,
+                    results['tasks']
+                )
+                
+                if comprehensive_comparison is not None:
+                    final_comparison_path = os.path.join(final_output, f"{base_name}_comparison.png")
+                    cv2.imwrite(final_comparison_path, comprehensive_comparison)
+                    self.logger.info(f"✅ Created comprehensive comparison: {final_comparison_path}")
+            
+            # Also create the detailed folder structure for debugging
+            file_output_dir = os.path.join(final_output, f"{base_name}_detailed")
             os.makedirs(file_output_dir, exist_ok=True)
             
             # Copy original input
@@ -287,6 +373,70 @@ class DocumentProcessingPipeline:
                     shutil.copy2(task_result['output'], task_output_file)
         
         self.logger.info(f"✅ Final output generated in: {final_output}")
+    
+    def _create_comprehensive_comparison(self, original_path, processed_path, base_name, skew_angle, task_results):
+        """Create a comprehensive comparison image with skewness and processing information"""
+        
+        try:
+            import cv2
+            import numpy as np
+            
+            # Load images
+            original = cv2.imread(original_path)
+            processed = cv2.imread(processed_path)
+            
+            if original is None or processed is None:
+                self.logger.warning(f"⚠️  Could not load images for comprehensive comparison")
+                return None
+            
+            # Ensure both images have the same height for comparison
+            height, width = original.shape[:2]
+            if processed.shape[0] != height:
+                scale = height / processed.shape[0]
+                new_w = int(processed.shape[1] * scale)
+                processed_resized = cv2.resize(processed, (new_w, height), interpolation=cv2.INTER_AREA)
+            else:
+                processed_resized = processed
+            
+            # Create side-by-side comparison
+            comparison = np.hstack([original, processed_resized])
+            
+            # Add text labels
+            font = cv2.FONT_HERSHEY_SIMPLEX
+            font_scale = 1.0
+            thickness = 2
+            color = (0, 255, 0)  # Green text
+            
+            # Original image label
+            cv2.putText(comparison, "Original", (50, 50), font, font_scale, color, thickness)
+            
+            # Processed image label
+            cv2.putText(comparison, "Final Processed", (width + 50, 50), font, font_scale, color, thickness)
+            
+            # Add skewness information with better visibility
+            if skew_angle is not None:
+                skew_text = f"Detected Skew: {skew_angle:+.2f}° | Applied Correction: {-skew_angle:+.2f}°"
+                # Add black outline for better visibility
+                cv2.putText(comparison, skew_text, (50, height - 60), font, 0.7, (0, 0, 0), 3)  # Black outline
+                cv2.putText(comparison, skew_text, (50, height - 60), font, 0.7, (255, 255, 0), 2)  # Yellow text
+            
+            # Add processing summary with better visibility
+            summary_text = f"Processing: Skew Detection → Cropping → Orientation Correction"
+            # Add black outline for better visibility
+            cv2.putText(comparison, summary_text, (50, height - 30), font, 0.6, (0, 0, 0), 3)  # Black outline
+            cv2.putText(comparison, summary_text, (50, height - 30), font, 0.6, (0, 255, 255), 1)  # Cyan text
+            
+            # Add file information with better visibility
+            file_text = f"File: {base_name} | Pipeline: End-to-End Document Processing"
+            # Add black outline for better visibility
+            cv2.putText(comparison, file_text, (50, height - 10), font, 0.6, (0, 0, 0), 3)  # Black outline
+            cv2.putText(comparison, file_text, (50, height - 10), font, 0.6, (255, 0, 255), 1)  # Magenta text
+            
+            return comparison
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error creating comprehensive comparison: {str(e)}")
+            return None
     
     def _log_pipeline_statistics(self):
         """Log pipeline statistics and summary"""

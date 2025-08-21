@@ -8,12 +8,14 @@ independently tested, maintained, and updated.
 
 from .task_1_skew_detection import SkewDetectionTask
 from .task_2_cropping import DocumentCroppingTask
-from .task_3_orientation_correction import OrientationCorrectionTask
+from .task_3_size_dpi_standardization import SizeDPIStandardizationTask
+from .task_4_orientation_correction import OrientationCorrectionTask
 from .task_manager import TaskManager
 
 __all__ = [
     'SkewDetectionTask',
     'DocumentCroppingTask', 
+    'SizeDPIStandardizationTask',
     'OrientationCorrectionTask',
     'TaskManager'
 ]
@@ -27,7 +29,8 @@ __description__ = "Individual task implementations for document processing pipel
 TASK_REGISTRY = {
     "task_1_skew_detection": SkewDetectionTask,
     "task_2_cropping": DocumentCroppingTask,
-    "task_3_orientation_correction": OrientationCorrectionTask
+    "task_3_size_dpi_standardization": SizeDPIStandardizationTask,
+    "task_4_orientation_correction": OrientationCorrectionTask
 }
 
 def get_task_class(task_id):

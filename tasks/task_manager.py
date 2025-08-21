@@ -12,7 +12,8 @@ from pathlib import Path
 # Import individual task classes
 from .task_1_skew_detection import SkewDetectionTask
 from .task_2_cropping import DocumentCroppingTask
-from .task_3_orientation_correction import OrientationCorrectionTask
+from .task_3_size_dpi_standardization import SizeDPIStandardizationTask
+from .task_4_orientation_correction import OrientationCorrectionTask
 
 class TaskManager:
     """Manages all pipeline tasks"""
@@ -24,21 +25,24 @@ class TaskManager:
         self.tasks = {
             "task_1_skew_detection": SkewDetectionTask(logger),
             "task_2_cropping": DocumentCroppingTask(logger),
-            "task_3_orientation_correction": OrientationCorrectionTask(logger)
+            "task_3_size_dpi_standardization": SizeDPIStandardizationTask(logger),
+            "task_4_orientation_correction": OrientationCorrectionTask(logger)
         }
         
         # Task dependencies
         self.dependencies = {
             "task_1_skew_detection": [],
             "task_2_cropping": ["task_1_skew_detection"],
-            "task_3_orientation_correction": ["task_2_cropping"]
+            "task_3_size_dpi_standardization": ["task_2_cropping"],
+            "task_4_orientation_correction": ["task_3_size_dpi_standardization"]
         }
         
         # Task execution order
         self.execution_order = [
             "task_1_skew_detection",
             "task_2_cropping", 
-            "task_3_orientation_correction"
+            "task_3_size_dpi_standardization",
+            "task_4_orientation_correction"
         ]
     
     def get_task(self, task_id):

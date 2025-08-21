@@ -33,7 +33,7 @@ Examples:
     
     parser.add_argument(
         '--mode', 
-        choices=['full_pipeline', 'skew_only', 'crop_only', 'orient_only', 'skew_and_crop', 'crop_and_orient'],
+        choices=['full_pipeline', 'skew_only', 'crop_only', 'orient_only', 'skew_and_crop', 'crop_and_orient', 'with_dpi_standardization'],
         default='full_pipeline',
         help='Pipeline execution mode (default: full_pipeline)'
     )

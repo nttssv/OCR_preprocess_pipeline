@@ -52,12 +52,28 @@ PIPELINE_CONFIG = {
             }
         },
         
-        "task_3_orientation_correction": {
+        "task_3_size_dpi_standardization": {
+            "name": "Size & DPI Standardization",
+            "enabled": True,
+            "description": "Standardize image dimensions and improve DPI to 300 for optimal OCR processing",
+            "order": 3,
+            "dependencies": ["task_2_cropping"],
+            "output_format": "png",
+            "settings": {
+                "target_dpi": 300,
+                "standard_width": 2480,  # A4 width at 300 DPI
+                "standard_height": 3508,  # A4 height at 300 DPI
+                "enhancement_methods": ["clahe", "denoising", "sharpening", "thresholding"],
+                "maintain_aspect_ratio": True
+            }
+        },
+        
+        "task_4_orientation_correction": {
             "name": "Orientation Correction",
             "enabled": True,
             "description": "Detect and correct upside-down or sideways pages",
-            "order": 3,
-            "dependencies": ["task_2_cropping"],
+            "order": 4,
+            "dependencies": ["task_3_size_dpi_standardization"],
             "output_format": "png",
             "settings": {
                 "detection_methods": ["text_structure", "character_patterns", "reading_direction"],
@@ -134,7 +150,7 @@ EXECUTION_MODES = {
     "full_pipeline": {
         "name": "Full Pipeline",
         "description": "Run all enabled tasks in sequence",
-        "tasks": ["task_1_skew_detection", "task_2_cropping", "task_3_orientation_correction"]
+        "tasks": ["task_1_skew_detection", "task_2_cropping", "task_3_size_dpi_standardization", "task_4_orientation_correction"]
     },
     
     "skew_only": {
@@ -165,6 +181,12 @@ EXECUTION_MODES = {
         "name": "Crop + Orient",
         "description": "Run cropping and orientation correction",
         "tasks": ["task_2_cropping", "task_3_orientation_correction"]
+    },
+    
+    "with_dpi_standardization": {
+        "name": "Full Pipeline + DPI Standardization",
+        "description": "Run all tasks including size and DPI standardization",
+        "tasks": ["task_1_skew_detection", "task_2_cropping", "task_3_size_dpi_standardization", "task_4_orientation_correction"]
     }
 }
 
