@@ -79,7 +79,7 @@ class NoiseReductionTask:
             
             if processed_image_path and comparison_path:
                 return {
-                    'success': True,
+                    'status': 'completed',
                     'output': processed_image_path,
                     'comparison': comparison_path,
                     'task_id': self.task_id,
@@ -88,7 +88,7 @@ class NoiseReductionTask:
                 }
             else:
                 return {
-                    'success': False,
+                    'status': 'failed',
                     'output': None,
                     'comparison': None,
                     'task_id': self.task_id,
@@ -99,7 +99,7 @@ class NoiseReductionTask:
         except Exception as e:
             self.logger.error(f"Error in noise reduction task: {str(e)}")
             return {
-                'success': False,
+                'status': 'failed',
                 'output_path': None,
                 'comparison_path': None,
                 'task_id': self.task_id,

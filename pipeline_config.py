@@ -129,6 +129,219 @@ PIPELINE_CONFIG = {
                 "brightness_tolerance": 30,
                 "enhancement_mode": "adaptive"
             }
+        },
+        
+        "task_7_multipage_segmentation": {
+            "name": "Multi-page & Region Segmentation",
+            "enabled": True,  # Enabled for full pipeline
+            "description": "Multi-page detection, page splitting, and ROI isolation",
+            "order": 7,
+            "dependencies": ["task_6_contrast_enhancement"],  # Run after contrast enhancement
+            "output_format": "png",
+            "settings": {
+                # Multi-page detection
+                "min_gap_width_ratio": 0.05,
+                "min_gap_height_ratio": 0.3,
+                "projection_threshold": 0.95,
+                
+                # Page splitting
+                "enable_page_splitting": True,
+                "split_margin": 20,
+                
+                # Region of interest
+                "enable_roi_isolation": True,
+                "color_preservation_threshold": 30,
+                "stamp_signature_detection": True,
+                "text_to_grayscale": True,
+                
+                # Manual verification
+                "enable_manual_verification": False,
+                "confidence_threshold": 0.8
+            }
+        },
+        
+        "task_8_color_handling": {
+            "name": "Color Handling",
+            "enabled": True,  # Enabled for full pipeline with color management
+            "description": "Intelligent color management with stamp/signature preservation and dual output",
+            "order": 8,
+            "dependencies": ["task_7_multipage_segmentation"],  # Run after multipage segmentation
+            "output_format": "png",
+            "settings": {
+                # Color Detection  
+                "enable_color_detection": True,
+                "stamp_color_threshold": 15,          # Reduced for stamps with white text inside
+                "signature_color_threshold": 20,      # Increased for more reliable signature detection
+                "color_saturation_threshold": 50,     # Better color detection
+                "color_value_threshold": 50,
+                
+                # Color Preservation
+                "preserve_stamp_colors": True,
+                "preserve_signature_colors": True,
+                "color_region_expansion": 10,
+                "minimum_region_size": 500,
+                
+                # Grayscale Conversion
+                "grayscale_method": "adaptive",
+                "preserve_text_contrast": True,
+                "contrast_enhancement_factor": 1.2,
+                "gamma_correction": 1.1,
+                
+                # Dual Output
+                "enable_dual_output": True,
+                "color_suffix": "_color_archive",
+                "grayscale_suffix": "_grayscale_ocr",
+                "color_quality": 95,
+                "grayscale_compression": True,
+                
+                # Output Options
+                "create_comparison": True,
+                "highlight_preserved_regions": True,
+                "save_region_masks": False
+            }
+        },
+        
+        "task_9_document_deduplication": {
+            "name": "Document Deduplication",
+            "enabled": True,
+            "description": "Perceptual hashing for detecting repeated attachments and avoiding redundant OCR",
+            "order": 9,
+            "dependencies": [],  # Can run independently at the start
+            "output_format": "json",  # Primarily generates reports
+            "settings": {
+                # Perceptual Hashing Settings
+                "phash_size": 16,                    # Hash dimension (16x16 = 256-bit hash)
+                "phash_threshold": 10,               # Hamming distance threshold for duplicates
+                "enable_phash": True,                # Enable perceptual hashing
+                "enable_content_hash": True,         # Enable content-based hashing
+                "enable_size_check": True,           # Enable size-based pre-filtering
+                
+                # Duplicate Detection Settings
+                "similarity_threshold": 85,          # Percentage similarity for duplicates
+                "size_tolerance": 0.1,               # 10% size difference tolerance
+                "enable_rotation_invariant": True,   # Detect rotated duplicates
+                "enable_scale_invariant": True,      # Detect scaled duplicates
+                
+                # Processing Options
+                "skip_duplicates": True,             # Skip processing duplicates
+                "index_duplicates": True,            # Index duplicates in database
+                "generate_fingerprints": True,       # Generate audit fingerprints
+                "create_comparison": True,           # Create comparison images
+                
+                # Database Settings
+                "db_path": "deduplication/dedup_index.db",
+                "enable_audit_trail": True,         # Maintain audit trail
+                "max_similar_files": 10,            # Max similar files to track per hash
+                
+                # Output Settings
+                "save_duplicate_report": True,      # Save duplicate detection report
+                "highlight_duplicates": True,       # Highlight duplicates in comparisons
+                "dedup_suffix": "_dedup_report"     # Suffix for deduplication reports
+            }
+        },
+        
+        "task_10_language_detection": {
+            "name": "Language & Script Detection",
+            "enabled": True,
+            "description": "Detect dominant script and language for multilingual OCR path optimization",
+            "order": 10,
+            "dependencies": ["task_9_document_deduplication"],
+            "output_format": "json",
+            "settings": {
+                # Script Detection Settings
+                "enable_script_detection": True,
+                "supported_scripts": ["latin", "vietnamese", "numeric", "mrz"],
+                "confidence_threshold": 0.7,
+                
+                # Language Detection Settings
+                "enable_language_detection": True,
+                "supported_languages": ["eng", "vie", "fra", "spa", "deu"],
+                "tesseract_config": "--oem 3 --psm 6",
+                
+                # Vietnamese Specific
+                "detect_vietnamese_diacritics": True,
+                "mrz_detection": True,
+                "handwriting_detection": True,
+                
+                # Output Settings
+                "save_language_report": True,
+                "create_script_overlay": True,
+                "print_detected_language": True
+            }
+        },
+        
+        "task_11_metadata_extraction": {
+            "name": "Metadata Extraction (Pre-OCR)",
+            "enabled": True,
+            "description": "Extract comprehensive metadata for orchestration layer",
+            "order": 11,
+            "dependencies": ["task_10_language_detection"],
+            "output_format": "json",
+            "settings": {
+                # Analysis Settings
+                "analyze_resolution": True,
+                "analyze_color_depth": True,
+                "analyze_text_density": True,
+                "analyze_image_density": True,
+                "analyze_graphics_presence": True,
+                "analyze_table_presence": True,
+                
+                # Quality Analysis
+                "analyze_image_quality": True,
+                "detect_blur": True,
+                "detect_noise": True,
+                "detect_low_contrast": True,
+                
+                # Document Features
+                "detect_document_type": True,
+                "detect_form_fields": True,
+                "detect_signatures": True,
+                "detect_stamps": True,
+                
+                # Output Settings
+                "save_sidecar_json": True,
+                "include_thumbnail": True,
+                "thumbnail_size": [200, 200]
+            }
+        },
+        
+        "task_12_output_specifications": {
+            "name": "Output Specifications",
+            "enabled": True,
+            "description": "Generate standardized outputs with comprehensive metadata and audit logs",
+            "order": 12,
+            "dependencies": ["task_11_metadata_extraction"],
+            "output_format": "multiple",
+            "settings": {
+                # Output Format Settings
+                "standardized_formats": ["tiff", "png"],
+                "primary_format": "tiff",
+                "generate_pdf": True,
+                "pdf_dpi": 300,
+                
+                # Quality Settings
+                "tiff_compression": "lzw",
+                "png_compression": 6,
+                "jpeg_quality": 95,
+                
+                # Metadata Standards
+                "generate_comprehensive_metadata": True,
+                "include_processing_chain": True,
+                "include_qc_flags": True,
+                "include_audit_trail": True,
+                
+                # Quality Control
+                "detect_multi_page": True,
+                "flag_low_contrast": True,
+                "flag_blur": True,
+                "flag_orientation_issues": True,
+                
+                # Output Organization
+                "create_document_folder": True,
+                "include_thumbnails": True,
+                "generate_summary_report": True,
+                "create_reproducibility_manifest": True
+            }
         }
     },
     
@@ -200,7 +413,7 @@ EXECUTION_MODES = {
     "full_pipeline": {
         "name": "Full Pipeline",
         "description": "Run all enabled tasks in sequence",
-        "tasks": ["task_1_orientation_correction", "task_2_skew_detection", "task_3_cropping", "task_4_size_dpi_standardization", "task_5_noise_reduction", "task_6_contrast_enhancement"]
+        "tasks": ["task_9_document_deduplication", "task_1_orientation_correction", "task_2_skew_detection", "task_3_cropping", "task_4_size_dpi_standardization", "task_5_noise_reduction", "task_6_contrast_enhancement", "task_7_multipage_segmentation", "task_8_color_handling", "task_10_language_detection", "task_11_metadata_extraction", "task_12_output_specifications"]
     },
     
     "orient_only": {
@@ -261,6 +474,72 @@ EXECUTION_MODES = {
         "name": "With Enhancement",
         "description": "Run all tasks including contrast enhancement",
         "tasks": ["task_1_orientation_correction", "task_2_skew_detection", "task_3_cropping", "task_4_size_dpi_standardization", "task_5_noise_reduction", "task_6_contrast_enhancement"]
+    },
+    
+    "segmentation_only": {
+        "name": "Multi-page Segmentation Only",
+        "description": "Only run multi-page detection and region segmentation",
+        "tasks": ["task_7_multipage_segmentation"],
+        "standalone_mode": True  # Allow task to run without dependencies
+    },
+    
+    "with_segmentation": {
+        "name": "Full Pipeline + Segmentation",
+        "description": "Run all tasks including multi-page segmentation",
+        "tasks": ["task_1_orientation_correction", "task_2_skew_detection", "task_3_cropping", "task_4_size_dpi_standardization", "task_5_noise_reduction", "task_6_contrast_enhancement", "task_7_multipage_segmentation"]
+    },
+    
+    "color_handling_only": {
+        "name": "Color Handling Only",
+        "description": "Only run color management with stamp/signature preservation",
+        "tasks": ["task_8_color_handling"],
+        "standalone_mode": True
+    },
+    
+    "with_color_handling": {
+        "name": "With Color Handling",
+        "description": "Run all tasks including intelligent color management",
+        "tasks": ["task_1_orientation_correction", "task_2_skew_detection", "task_3_cropping", "task_4_size_dpi_standardization", "task_5_noise_reduction", "task_6_contrast_enhancement", "task_7_multipage_segmentation", "task_8_color_handling"]
+    },
+    
+    "deduplication_only": {
+        "name": "Document Deduplication Only",
+        "description": "Only run document deduplication with perceptual hashing",
+        "tasks": ["task_9_document_deduplication"],
+        "standalone_mode": True
+    },
+    
+    "with_deduplication": {
+        "name": "With Deduplication",
+        "description": "Run all tasks with document deduplication at the start",
+        "tasks": ["task_9_document_deduplication", "task_1_orientation_correction", "task_2_skew_detection", "task_3_cropping", "task_4_size_dpi_standardization", "task_5_noise_reduction", "task_6_contrast_enhancement", "task_7_multipage_segmentation", "task_8_color_handling"]
+    },
+    
+    "language_detection_only": {
+        "name": "Language & Script Detection Only",
+        "description": "Only run language and script detection analysis",
+        "tasks": ["task_10_language_detection"],
+        "standalone_mode": True
+    },
+    
+    "metadata_extraction_only": {
+        "name": "Metadata Extraction Only",
+        "description": "Only run comprehensive metadata extraction",
+        "tasks": ["task_11_metadata_extraction"],
+        "standalone_mode": True
+    },
+    
+    "output_standardization_only": {
+        "name": "Output Standardization Only",
+        "description": "Only run output standardization and audit generation",
+        "tasks": ["task_12_output_specifications"],
+        "standalone_mode": True
+    },
+    
+    "comprehensive_pipeline": {
+        "name": "Comprehensive Document Processing",
+        "description": "Complete pipeline with all analysis and standardization features",
+        "tasks": ["task_9_document_deduplication", "task_10_language_detection", "task_11_metadata_extraction", "task_1_orientation_correction", "task_2_skew_detection", "task_3_cropping", "task_4_size_dpi_standardization", "task_5_noise_reduction", "task_6_contrast_enhancement", "task_7_multipage_segmentation", "task_8_color_handling", "task_12_output_specifications"]
     }
 }
 

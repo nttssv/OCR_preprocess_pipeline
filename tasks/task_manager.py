@@ -16,6 +16,12 @@ from .task_3_cropping import DocumentCroppingTask
 from .task_4_size_dpi_standardization import SizeDPIStandardizationTask
 from .task_5_noise_reduction import NoiseReductionTask
 from .task_6_contrast_enhancement import ContrastEnhancementTask
+from .task_7_multipage_segmentation import MultiPageSegmentationTask
+from .task_8_color_handling import ColorHandlingTask
+from .task_9_document_deduplication import DocumentDeduplicationTask
+from .task_10_language_detection import LanguageDetectionTask
+from .task_11_metadata_extraction import MetadataExtractionTask
+from .task_12_output_specifications import OutputSpecificationsTask
 
 class TaskManager:
     """Manages all pipeline tasks"""
@@ -30,7 +36,13 @@ class TaskManager:
             "task_3_cropping": DocumentCroppingTask(logger),
             "task_4_size_dpi_standardization": SizeDPIStandardizationTask(logger),
             "task_5_noise_reduction": NoiseReductionTask(),
-            "task_6_contrast_enhancement": ContrastEnhancementTask()
+            "task_6_contrast_enhancement": ContrastEnhancementTask(),
+            "task_7_multipage_segmentation": MultiPageSegmentationTask(logger),
+            "task_8_color_handling": ColorHandlingTask(logger=logger),
+            "task_9_document_deduplication": DocumentDeduplicationTask(logger=logger),
+            "task_10_language_detection": LanguageDetectionTask(logger=logger),
+            "task_11_metadata_extraction": MetadataExtractionTask(logger=logger),
+            "task_12_output_specifications": OutputSpecificationsTask(logger=logger)
         }
         
         # Task dependencies
@@ -40,17 +52,29 @@ class TaskManager:
             "task_3_cropping": ["task_2_skew_detection"],
             "task_4_size_dpi_standardization": ["task_3_cropping"],
             "task_5_noise_reduction": ["task_4_size_dpi_standardization"],
-            "task_6_contrast_enhancement": ["task_5_noise_reduction"]
+            "task_6_contrast_enhancement": ["task_5_noise_reduction"],
+            "task_7_multipage_segmentation": ["task_6_contrast_enhancement"],  # Run after contrast enhancement
+            "task_8_color_handling": ["task_7_multipage_segmentation"],  # Run after multipage segmentation
+            "task_9_document_deduplication": [],  # Can run independently
+            "task_10_language_detection": ["task_9_document_deduplication"],  # Run after deduplication
+            "task_11_metadata_extraction": ["task_10_language_detection"],  # Run after language detection
+            "task_12_output_specifications": ["task_11_metadata_extraction"]  # Run after metadata extraction
         }
         
                 # Task execution order
         self.execution_order = [
+            "task_9_document_deduplication",    # Run first to detect duplicates
+            "task_10_language_detection",       # Early language analysis
+            "task_11_metadata_extraction",      # Pre-OCR metadata extraction
             "task_1_orientation_correction",
             "task_2_skew_detection",
             "task_3_cropping",
             "task_4_size_dpi_standardization",
             "task_5_noise_reduction",
-            "task_6_contrast_enhancement"
+            "task_6_contrast_enhancement",
+            "task_7_multipage_segmentation",
+            "task_8_color_handling",
+            "task_12_output_specifications"     # Final standardized output
         ]
     
     def get_task(self, task_id):
@@ -110,14 +134,16 @@ class TaskManager:
         self.logger.info(f"🚀 Executing task: {task_id}")
         return task.run(input_file, file_type, output_folder)
     
-    def run_task_chain(self, task_ids, input_file, file_type, output_folder):
+    def run_task_chain(self, task_ids, input_file, file_type, output_folder, standalone_mode=False):
         """Run a sequence of tasks in order"""
         
-        # Validate the task chain
-        is_valid, message = self.validate_task_chain(task_ids)
-        if not is_valid:
-            self.logger.error(f"Invalid task chain: {message}")
-            return None
+        # Skip validation in standalone mode (for segmentation_only, etc.)
+        if not standalone_mode:
+            # Validate the task chain
+            is_valid, message = self.validate_task_chain(task_ids)
+            if not is_valid:
+                self.logger.error(f"Invalid task chain: {message}")
+                return None
         
         results = {}
         current_input = input_file

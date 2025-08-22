@@ -200,9 +200,10 @@ class IntelligentDocumentProcessor:
             # Get enabled tasks for this mode
             mode_config = get_execution_mode(mode_name)
             enabled_tasks = mode_config['tasks']
+            standalone_mode = mode_config.get('standalone_mode', False)
             
             # Run the task chain (PDFs are pre-converted to images, so file_type is 'image')
-            result = task_manager.run_task_chain(enabled_tasks, file_path, 'image', file_temp_folder)
+            result = task_manager.run_task_chain(enabled_tasks, file_path, 'image', file_temp_folder, standalone_mode)
             
             processing_time = time.time() - start_time
             
@@ -394,7 +395,7 @@ Quality Features:
     
     parser.add_argument(
         '--mode', 
-        choices=['full_pipeline', 'skew_only', 'crop_only', 'orient_only', 'skew_and_crop', 'crop_and_orient', 'with_dpi_standardization', 'noise_only', 'with_denoising', 'contrast_only', 'with_enhancement'],
+        choices=['full_pipeline', 'skew_only', 'crop_only', 'orient_only', 'skew_and_crop', 'crop_and_orient', 'with_dpi_standardization', 'noise_only', 'with_denoising', 'contrast_only', 'with_enhancement', 'segmentation_only', 'with_segmentation', 'color_handling_only', 'with_color_handling', 'deduplication_only', 'with_deduplication', 'language_detection_only', 'metadata_extraction_only', 'output_standardization_only', 'comprehensive_pipeline'],
         default='full_pipeline',
         help='Pipeline execution mode (default: full_pipeline)'
     )

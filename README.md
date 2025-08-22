@@ -8,7 +8,9 @@
 - **🔧 Quality Optimization**: Automatically fixes blur and gray background issues
 - **📄 Multi-Format Support**: Images (PNG, JPG, TIFF, BMP) and PDFs
 - **🎯 Smart Processing**: Document-specific configurations for optimal results
-- **📊 Complete Pipeline**: Orientation → Skew → Cropping → DPI → Denoising → Enhancement
+- **📊 Complete Pipeline**: Orientation → Skew → Cropping → DPI → Denoising → Enhancement → Segmentation
+- **🔄 Multi-page Support**: Automatic detection and splitting of double-page scans
+- **🎨 Smart ROI Isolation**: Preserves colored stamps/signatures while converting text to grayscale
 
 ## 🚀 Quick Start
 
@@ -36,13 +38,15 @@ python run.py --input my_docs --output results
 
 | Mode | Description | Tasks |
 |------|-------------|-------|
-| `full_pipeline` | Complete processing (default) | All 6 tasks |
+| `full_pipeline` | Complete processing (default) | All 6 core tasks |
 | `skew_only` | Only skew detection/correction | Task 2 only |
 | `crop_only` | Only document cropping | Task 3 only |
 | `orient_only` | Only orientation correction | Task 1 only |
 | `with_dpi_standardization` | Include DPI optimization | Tasks 1-4 |
 | `with_denoising` | Include noise reduction | Tasks 1-5 |
-| `with_enhancement` | Include contrast enhancement | All tasks |
+| `with_enhancement` | Include contrast enhancement | Tasks 1-6 |
+| `segmentation_only` | **NEW**: Multi-page segmentation only | Task 7 only |
+| `with_segmentation` | **NEW**: Full pipeline + segmentation | All 7 tasks |
 
 ## ✨ Quality Features
 
@@ -138,8 +142,44 @@ A: Reduce workers: `python run.py --workers 2`
 - **v1.5**: Added automatic blur prevention 
 - **v1.0**: Initial sequential pipeline
 
+## 🆕 Multi-page & Region Segmentation (Task 7)
+
+### 🔍 **Multi-page Detection**
+- **Projection Profile Analysis**: Detects large blank vertical gaps between pages
+- **Automatic Page Splitting**: Separates double-page scans into individual pages
+- **Configurable Thresholds**: Adjust gap detection sensitivity
+
+### 🎨 **Region of Interest (ROI) Isolation**
+- **Color Preservation**: Keeps stamps and signatures in original colors
+- **Text Conversion**: Converts body text to grayscale/binary for smaller file sizes
+- **Smart Detection**: Automatically identifies colored vs text regions
+
+### ⚙️ **Configuration Options**
+```bash
+# Test multi-page segmentation only
+python run.py --mode segmentation_only
+
+# Full pipeline with segmentation
+python run.py --mode with_segmentation
+
+# Custom test script
+python test_segmentation.py
+```
+
+### 📊 **Output Structure**
+```
+output/processed_document/
+├── document_result.png           # Final processed image
+├── document_comparison.png       # Side-by-side comparison
+├── document_page_1_segmented.png # Split page 1 (if multi-page)
+├── document_page_2_segmented.png # Split page 2 (if multi-page)
+└── document_multipage_comparison.png # Multi-page split comparison
+```
+
 ## 🎯 What's New
 
+✅ **Multi-page Segmentation**: Automatic detection and splitting of double-page scans
+✅ **ROI Isolation**: Smart preservation of colored content while optimizing text
 ✅ **Integrated Quality Fixes**: No more manual quality fixing needed
 ✅ **Simplified Structure**: Single `run.py` entry point  
 ✅ **Automatic Detection**: Smart document-specific processing

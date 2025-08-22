@@ -849,6 +849,29 @@ class OrientationCorrectionTask:
             reading_direction_result = orientations[2]  # reading_direction method
             # Check if reading_direction conflicts with 2+ other methods
             reading_conflicts = sum(1 for o in orientations[:2] + orientations[3:] if o != reading_direction_result)
+            
+            # CONSERVATIVE CHECK: If other methods suggest 0° (no rotation), be very cautious
+            zero_degree_methods = sum(1 for o in orientations[:2] + orientations[3:] if o == 0)
+            if reading_direction_result != 0 and zero_degree_methods >= 2:
+                self.logger.info(f"   ⚠️  Reading direction suggests {reading_direction_result}° but {zero_degree_methods} methods suggest 0° (no rotation) → staying conservative at 0°")
+                return 0
+            
+            # INTELLIGENT CHECK: Distinguish between genuine rotation needs vs false positives
+            # This handles cases where the image appears rotated to algorithms but is actually correct
+            rotation_consensus = max(sum(1 for o in orientations if o == angle) for angle in [0, 90, 180, 270])
+            
+            # ENHANCED VALIDATION: Additional checks for potential false positives
+            rotation_consensus_count = sum(1 for o in orientations if o == reading_direction_result)
+            
+            # Conservative check for mixed_content documents (like stamps/signatures)
+            if (reading_direction_result != 0 and features['document_type'] == 'mixed_content' and 
+                rotation_consensus_count >= 3 and features['reading_reliability'] > 0.95):
+                self.logger.info(f"   ⚠️  Strong {reading_direction_result}° consensus on mixed_content document with high reliability ({features['reading_reliability']:.3f})")
+                self.logger.info(f"   🔍  This might be a false positive for stamps/signatures/mixed content")
+                self.logger.info(f"   🛡️  Being conservative - staying at 0° to preserve original orientation")
+                self.logger.info(f"   💡 If the document is actually rotated, please manually rotate it before processing")
+                return 0
+            
             if reading_conflicts >= 2:
                 self.logger.info(f"   ⚠️  High reading reliability ({features['reading_reliability']:.3f}) but conflicts with {reading_conflicts} methods → proceeding to consensus")
             else:
@@ -861,6 +884,18 @@ class OrientationCorrectionTask:
             if orientations[2] == 0 and features['reading_reliability'] > 0.95 and most_common != 0:
                 self.logger.info(f"   ⚠️  Strong consensus for {most_common}° but reading_direction (0°) has very high reliability ({features['reading_reliability']:.3f}) → staying at 0°")
                 return 0
+            
+            # ENHANCED VALIDATION: Conservative check for large scanned documents
+            if (most_common != 0 and features['document_type'] == 'scanned_document' and 
+                features['is_large'] and max_count >= 2):
+                zero_methods = sum(1 for o in orientations if o == 0)
+                if zero_methods >= 1:  # At least one method suggests 0°
+                    self.logger.info(f"   ⚠️  Strong {most_common}° consensus on large scanned_document but {zero_methods} method(s) suggest 0°")
+                    self.logger.info(f"   🔍  Large scanned documents often have false positive rotations due to complex layouts")
+                    self.logger.info(f"   🛡️  Being conservative - staying at 0° to preserve original orientation")
+                    self.logger.info(f"   💡 If the document is actually rotated, please manually rotate it before processing")
+                    return 0
+            
             self.logger.info(f"   🎯 Strong consensus: {most_common}° ({max_count}/4 methods agree)")
             return most_common
         
@@ -873,6 +908,27 @@ class OrientationCorrectionTask:
                     agreeing_methods.append(method_names[i])
             
             self.logger.info(f"   🎯 Moderate consensus: {most_common}° (methods: {agreeing_methods})")
+            
+            # ENHANCED VALIDATION: Conservative check for dense_text and large scanned documents
+            if most_common != 0:
+                zero_methods = sum(1 for o in orientations if o == 0)
+                
+                # Conservative for large scanned documents
+                if (features['document_type'] == 'scanned_document' and features['is_large'] and zero_methods >= 1):
+                    self.logger.info(f"   ⚠️  Moderate {most_common}° consensus on large scanned_document but {zero_methods} method(s) suggest 0°")
+                    self.logger.info(f"   🔍  Large scanned documents often have false positive rotations due to complex layouts")
+                    self.logger.info(f"   🛡️  Being conservative - staying at 0° to preserve original orientation")
+                    self.logger.info(f"   💡 If the document is actually rotated, please manually rotate it before processing")
+                    return 0
+                
+                # Conservative for dense_text documents with conflicting methods
+                if (features['document_type'] == 'dense_text' and zero_methods >= 1 and 
+                    features['reading_reliability'] > 0.95):
+                    self.logger.info(f"   ⚠️  Moderate {most_common}° consensus on dense_text document but {zero_methods} method(s) suggest 0°")
+                    self.logger.info(f"   🔍  Dense text documents with high reading reliability often have false positive rotations")
+                    self.logger.info(f"   🛡️  Being conservative - staying at 0° to preserve original orientation")
+                    self.logger.info(f"   💡 If the document is actually rotated, please manually rotate it before processing")
+                    return 0
             
             # Prioritize certain method combinations based on reliability
             if 'text_structure' in agreeing_methods and 'reading_direction' in agreeing_methods:

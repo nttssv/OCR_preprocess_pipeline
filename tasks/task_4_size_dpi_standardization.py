@@ -60,7 +60,7 @@ class SizeDPIStandardizationTask:
                 output_path = os.path.join(task_output, output_filename)
                 
                 return {
-                    'status': 'success',
+                    'status': 'completed',
                     'input': input_file,
                     'output': output_path,
                     'comparison': comparison_path,
