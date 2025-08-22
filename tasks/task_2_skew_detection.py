@@ -21,7 +21,7 @@ class SkewDetectionTask:
     def __init__(self, logger=None):
         self.logger = logger or logging.getLogger(__name__)
         self.task_name = "Skew Detection & Correction"
-        self.task_id = "task_1_skew_detection"
+        self.task_id = "task_2_skew_detection"
         
     def run(self, input_file, file_type, output_folder):
         """
@@ -40,7 +40,7 @@ class SkewDetectionTask:
             self.logger.info(f"🔄 Running {self.task_name} on {os.path.basename(input_file)}")
             
             # Create task-specific output folder
-            task_output = os.path.join(output_folder, "task1_skew_detection")
+            task_output = os.path.join(output_folder, "task2_skew_detection")
             os.makedirs(task_output, exist_ok=True)
             
             # Process based on file type

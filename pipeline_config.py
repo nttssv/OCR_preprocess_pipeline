@@ -23,12 +23,26 @@ PIPELINE_CONFIG = {
     
     # Task Configuration
     "tasks": {
-        "task_1_skew_detection": {
+        "task_1_orientation_correction": {
+            "name": "Orientation Correction",
+            "enabled": True,
+            "description": "Detect and correct upside-down or sideways pages",
+            "order": 1,
+            "dependencies": [],
+            "output_format": "png",
+            "settings": {
+                "detection_methods": ["text_structure", "character_patterns", "reading_direction"],
+                "rotation_angles": [0, 90, 180, 270],
+                "confidence_threshold": 0.6
+            }
+        },
+        
+        "task_2_skew_detection": {
             "name": "Skew Detection & Correction",
             "enabled": True,
             "description": "Detect and correct document skew angles",
-            "order": 1,
-            "dependencies": [],
+            "order": 2,
+            "dependencies": ["task_1_orientation_correction"],
             "output_format": "png",
             "settings": {
                 "max_angle": 15,  # Maximum skew angle to detect
@@ -37,12 +51,12 @@ PIPELINE_CONFIG = {
             }
         },
         
-        "task_2_cropping": {
+        "task_3_cropping": {
             "name": "Document Cropping",
             "enabled": True,
             "description": "Remove blank borders, punch holes, and scanner edges",
-            "order": 2,
-            "dependencies": ["task_1_skew_detection"],
+            "order": 3,
+            "dependencies": ["task_2_skew_detection"],
             "output_format": "png",
             "settings": {
                 "margin": 10,  # Margin to keep around text
@@ -52,33 +66,68 @@ PIPELINE_CONFIG = {
             }
         },
         
-        "task_3_size_dpi_standardization": {
+        "task_4_size_dpi_standardization": {
             "name": "Size & DPI Standardization",
             "enabled": True,
-            "description": "Standardize image dimensions and improve DPI to 300 for optimal OCR processing",
-            "order": 3,
-            "dependencies": ["task_2_cropping"],
+            "description": "Standardize image dimensions and improve DPI to 250 for optimal OCR processing",
+            "order": 4,
+            "dependencies": ["task_3_cropping"],
             "output_format": "png",
             "settings": {
-                "target_dpi": 300,
-                "standard_width": 2480,  # A4 width at 300 DPI
-                "standard_height": 3508,  # A4 height at 300 DPI
+                "target_dpi": 250,
+                "standard_width": 2079,  # A4 width at 250 DPI
+                "standard_height": 2923,  # A4 height at 250 DPI
                 "enhancement_methods": ["clahe", "denoising", "sharpening", "thresholding"],
                 "maintain_aspect_ratio": True
             }
         },
         
-        "task_4_orientation_correction": {
-            "name": "Orientation Correction",
+        "task_5_noise_reduction": {
+            "name": "Noise Reduction & Denoising",
             "enabled": True,
-            "description": "Detect and correct upside-down or sideways pages",
-            "order": 4,
-            "dependencies": ["task_3_size_dpi_standardization"],
+            "description": "Remove noise, artifacts, and bleed-through from document images",
+            "order": 5,
+            "dependencies": ["task_4_size_dpi_standardization"],
             "output_format": "png",
             "settings": {
-                "detection_methods": ["text_structure", "character_patterns", "reading_direction"],
-                "rotation_angles": [0, 90, 180, 270],
-                "confidence_threshold": 0.6
+                "median_filter_size": 3,
+                "nlm_h": 10,
+                "nlm_template_window": 7,
+                "nlm_search_window": 21,
+                "background_threshold": 0.8,
+                "bleedthrough_alpha": 0.3,
+                "enable_median_filter": True,
+                "enable_nlm_denoising": True,
+                "enable_background_removal": True,
+                "enable_bleedthrough_removal": True,
+                "enable_bilateral_filter": True
+            }
+        },
+        
+        "task_6_contrast_enhancement": {
+            "name": "Contrast & Brightness Enhancement",
+            "enabled": True,
+            "description": "Enhance contrast, brightness, and text clarity using CLAHE, gamma correction, and adaptive techniques",
+            "order": 6,
+            "dependencies": ["task_5_noise_reduction"],
+            "output_format": "png",
+            "settings": {
+                "enable_clahe": True,
+                "clahe_clip_limit": 2.0,
+                "clahe_tile_grid_size": [8, 8],
+                "enable_histogram_equalization": True,
+                "enable_gamma_correction": True,
+                "gamma_value": 1.2,
+                "enable_contrast_stretching": True,
+                "contrast_percentile_low": 2,
+                "contrast_percentile_high": 98,
+                "enable_adaptive_enhancement": True,
+                "enable_sharpening": True,
+                "sharpening_strength": 1.5,
+                "enable_brightness_adjustment": True,
+                "target_brightness": 180,
+                "brightness_tolerance": 30,
+                "enhancement_mode": "adaptive"
             }
         }
     },
@@ -92,7 +141,8 @@ PIPELINE_CONFIG = {
         },
         "max_file_size": 100 * 1024 * 1024,  # 100MB
         "batch_size": 10,  # Process 10 files at a time
-        "parallel_processing": False  # Enable for faster processing
+        "parallel_processing": True,  # Enable for faster processing
+        "max_workers": None  # Auto-detect based on CPU cores (None = auto)
     },
     
     # Quality Settings
@@ -150,43 +200,67 @@ EXECUTION_MODES = {
     "full_pipeline": {
         "name": "Full Pipeline",
         "description": "Run all enabled tasks in sequence",
-        "tasks": ["task_1_skew_detection", "task_2_cropping", "task_3_size_dpi_standardization", "task_4_orientation_correction"]
-    },
-    
-    "skew_only": {
-        "name": "Skew Detection Only",
-        "description": "Only run skew detection and correction",
-        "tasks": ["task_1_skew_detection"]
-    },
-    
-    "crop_only": {
-        "name": "Cropping Only", 
-        "description": "Only run document cropping",
-        "tasks": ["task_2_cropping"]
+        "tasks": ["task_1_orientation_correction", "task_2_skew_detection", "task_3_cropping", "task_4_size_dpi_standardization", "task_5_noise_reduction", "task_6_contrast_enhancement"]
     },
     
     "orient_only": {
         "name": "Orientation Only",
         "description": "Only run orientation correction",
-        "tasks": ["task_3_orientation_correction"]
+        "tasks": ["task_1_orientation_correction"]
     },
     
-    "skew_and_crop": {
-        "name": "Skew + Crop",
-        "description": "Run skew detection and cropping",
-        "tasks": ["task_1_skew_detection", "task_2_cropping"]
+    "skew_only": {
+        "name": "Skew Detection Only",
+        "description": "Only run skew detection and correction",
+        "tasks": ["task_2_skew_detection"]
     },
     
-    "crop_and_orient": {
-        "name": "Crop + Orient",
-        "description": "Run cropping and orientation correction",
-        "tasks": ["task_2_cropping", "task_3_orientation_correction"]
+    "crop_only": {
+        "name": "Cropping Only", 
+        "description": "Only run document cropping",
+        "tasks": ["task_3_cropping"]
+    },
+    
+    "orient_and_skew": {
+        "name": "Orient + Skew",
+        "description": "Run orientation correction and skew detection",
+        "tasks": ["task_1_orientation_correction", "task_2_skew_detection"]
+    },
+    
+    "orient_skew_crop": {
+        "name": "Orient + Skew + Crop",
+        "description": "Run orientation, skew and cropping",
+        "tasks": ["task_1_orientation_correction", "task_2_skew_detection", "task_3_cropping"]
     },
     
     "with_dpi_standardization": {
         "name": "Full Pipeline + DPI Standardization",
         "description": "Run all tasks including size and DPI standardization",
-        "tasks": ["task_1_skew_detection", "task_2_cropping", "task_3_size_dpi_standardization", "task_4_orientation_correction"]
+        "tasks": ["task_1_orientation_correction", "task_2_skew_detection", "task_3_cropping", "task_4_size_dpi_standardization"]
+    },
+    
+    "noise_only": {
+        "name": "Noise Reduction Only",
+        "description": "Only run noise reduction and denoising",
+        "tasks": ["task_5_noise_reduction"]
+    },
+    
+    "with_denoising": {
+        "name": "With Denoising",
+        "description": "Run all tasks including noise reduction",
+        "tasks": ["task_1_orientation_correction", "task_2_skew_detection", "task_3_cropping", "task_4_size_dpi_standardization", "task_5_noise_reduction"]
+    },
+    
+    "contrast_only": {
+        "name": "Contrast Enhancement Only",
+        "description": "Only run contrast and brightness enhancement",
+        "tasks": ["task_6_contrast_enhancement"]
+    },
+    
+    "with_enhancement": {
+        "name": "With Enhancement",
+        "description": "Run all tasks including contrast enhancement",
+        "tasks": ["task_1_orientation_correction", "task_2_skew_detection", "task_3_cropping", "task_4_size_dpi_standardization", "task_5_noise_reduction", "task_6_contrast_enhancement"]
     }
 }
 
