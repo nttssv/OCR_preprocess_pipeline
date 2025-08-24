@@ -48,6 +48,12 @@ class ContrastEnhancementTask:
             'target_brightness': 180,               # Target mean brightness (0-255)
             'brightness_tolerance': 30,             # Tolerance for brightness adjustment
             'enhancement_mode': 'adaptive',         # 'adaptive', 'conservative', 'aggressive'
+            
+            # White Background Enhancement Settings (for document quality fixes)
+            'force_white_background': False,        # Force pure white backgrounds
+            'white_threshold': 240,                 # Threshold for pixels considered white
+            'background_multiplier': 1.0,           # Brightness multiplier for background pixels
+            'aggressive_white_preservation': False   # Enable aggressive white background preservation
         }
         
         # Update with provided config
@@ -179,8 +185,15 @@ class ContrastEnhancementTask:
                 enhancement_steps.append("Light Sharpening")
                 self.logger.info(f"   🔧 Applied light sharpening")
             
-            # Step 4: Final optimization
-            self.logger.info(f"   🎯 Step 4: Final optimization...")
+            # Step 4: White Background Enhancement (if enabled)
+            if (self.config['force_white_background'] or 
+                self.config['enhancement_mode'] == 'aggressive_white_preservation'):
+                enhanced = self._apply_white_background_enhancement(enhanced, image_stats)
+                enhancement_steps.append("White Background Enhancement")
+                self.logger.info(f"   🔧 Applied white background enhancement")
+            
+            # Step 5: Final optimization
+            self.logger.info(f"   🎯 Step 5: Final optimization...")
             enhanced = self._final_optimization(enhanced, image_stats)
             
             # Convert back to BGR for output
@@ -189,8 +202,8 @@ class ContrastEnhancementTask:
             else:
                 enhanced_bgr = enhanced
             
-            # Step 5: Save outputs
-            self.logger.info(f"   💾 Step 5: Saving enhanced image...")
+            # Step 6: Save outputs
+            self.logger.info(f"   💾 Step 6: Saving enhanced image...")
             
             # Generate output filename
             base_name = os.path.splitext(os.path.basename(image_path))[0]
@@ -202,7 +215,7 @@ class ContrastEnhancementTask:
             self.logger.info(f"   💾 Enhanced image saved: {output_filename}")
             
             # Step 6: Create comparison image
-            self.logger.info(f"   🔍 Step 6: Creating comparison visualization...")
+            self.logger.info(f"   🔍 Step 7: Creating comparison visualization...")
             comparison_path = self._create_comparison_image(original_image, enhanced_bgr, 
                                                           output_folder, base_name, 
                                                           enhancement_steps, image_stats)
@@ -267,6 +280,18 @@ class ContrastEnhancementTask:
         if abs(current_brightness - target) <= tolerance:
             return image, False
         
+        # For aggressive white preservation, never darken - only brighten
+        if self.config.get('enhancement_mode') == 'aggressive_white_preservation':
+            if current_brightness < target:
+                # Always brighten towards target, more aggressive adjustment
+                adjustment = min(100, target - current_brightness)  # Increased max adjustment
+                adjusted = cv2.add(image, np.ones(image.shape, dtype=np.uint8) * int(adjustment))
+                return adjusted, True
+            else:
+                # Don't darken in white preservation mode
+                return image, False
+        
+        # Original logic for other modes
         # Calculate adjustment
         if current_brightness < target - tolerance:
             # Image is too dark - brighten
@@ -286,6 +311,12 @@ class ContrastEnhancementTask:
         
         base_gamma = self.config['gamma_value']
         
+        # For aggressive white preservation mode, always use base gamma or lower (brighter)
+        if self.config.get('enhancement_mode') == 'aggressive_white_preservation':
+            # Never increase gamma (darken) in white preservation mode
+            return base_gamma
+        
+        # Original adaptive logic for other modes
         # Adjust gamma based on image brightness
         if image_stats['is_dark']:
             # Dark images need more brightening
@@ -311,6 +342,13 @@ class ContrastEnhancementTask:
     def _apply_contrast_stretching(self, image, image_stats):
         """Apply contrast stretching to improve dynamic range"""
         
+        # Skip contrast stretching if we're preserving white backgrounds
+        # Contrast stretching can darken white backgrounds!
+        if (self.config.get('enhancement_mode') == 'aggressive_white_preservation' or 
+            self.config.get('force_white_background', False)):
+            self.logger.info(f"     🔧 Skipping contrast stretching to preserve white background")
+            return image
+        
         # Calculate percentiles for stretching
         low_percentile = np.percentile(image, self.config['contrast_percentile_low'])
         high_percentile = np.percentile(image, self.config['contrast_percentile_high'])
@@ -326,6 +364,12 @@ class ContrastEnhancementTask:
     
     def _should_apply_histogram_eq(self, image_stats):
         """Determine if global histogram equalization should be applied"""
+        
+        # NEVER apply histogram equalization in white background preservation mode!
+        # Histogram equalization redistributes pixel values and can darken white backgrounds
+        if (self.config.get('enhancement_mode') == 'aggressive_white_preservation' or 
+            self.config.get('force_white_background', False)):
+            return False
         
         # Apply histogram equalization only for very low contrast images
         # and avoid for already well-distributed images
@@ -384,6 +428,23 @@ class ContrastEnhancementTask:
     def _final_optimization(self, image, image_stats):
         """Apply final optimization touches"""
         
+        # Check for special sharpening enhancement mode (for blur correction)
+        if self.config.get('enhancement_mode') == 'sharp_preservation':
+            self.logger.info(f"     🔪 Sharp preservation mode - applying enhanced sharpening")
+            return self._apply_enhanced_final_sharpening(image, image_stats)
+        
+        # Check for moderate sharpening mode (prevents artifacts)
+        elif self.config.get('enhancement_mode') == 'moderate_sharpening':
+            self.logger.info(f"     🔧 Moderate sharpening mode - applying balanced enhancement")
+            return self._apply_moderate_final_sharpening(image, image_stats)
+        
+        # Skip ALL aggressive processing if we're in white background preservation mode
+        if (self.config.get('enhancement_mode') == 'aggressive_white_preservation' or 
+            self.config.get('force_white_background', False)):
+            # For white background preservation, do minimal processing to avoid undoing our work
+            self.logger.info(f"     🔧 Preserving white background - minimal final optimization")
+            return image
+        
         # Light noise reduction after enhancement (very conservative)
         if self.config['enhancement_mode'] != 'conservative':
             # Very light bilateral filtering to smooth noise without losing detail
@@ -392,12 +453,160 @@ class ContrastEnhancementTask:
             optimized = image
         
         # Ensure full dynamic range is utilized (if not already)
-        if image_stats['range_utilization'] < 0.9:
+        # But NEVER do this for white background preservation mode
+        if (image_stats['range_utilization'] < 0.9 and 
+            not self.config.get('force_white_background', False) and
+            self.config.get('enhancement_mode') != 'aggressive_white_preservation'):
             min_val, max_val = np.min(optimized), np.max(optimized)
             if max_val > min_val:
                 optimized = ((optimized - min_val) * 255.0 / (max_val - min_val)).astype(np.uint8)
         
         return optimized
+    
+    def _apply_enhanced_final_sharpening(self, image, image_stats):
+        """Apply enhanced sharpening for blur correction in final stage"""
+        
+        enhanced = image.copy()
+        
+        # Apply final unsharp mask if configured
+        if self.config.get('apply_final_unsharp', False):
+            sigma = self.config.get('final_unsharp_sigma', 0.8)
+            strength = self.config.get('final_unsharp_strength', 1.2)
+            
+            self.logger.info(f"     🔪 Applying final unsharp mask (sigma={sigma}, strength={strength})")
+            enhanced = self._apply_unsharp_mask(enhanced, sigma, strength)
+        
+        # Apply aggressive sharpening if sharpening strength is high
+        if self.config.get('sharpening_strength', 1.0) >= 2.0:
+            self.logger.info(f"     🔪 Applying aggressive final sharpening")
+            enhanced = self._apply_aggressive_sharpening(enhanced)
+        
+        return enhanced
+    
+    def _apply_moderate_final_sharpening(self, image, image_stats):
+        """Apply moderate final sharpening that prevents artifacts"""
+        
+        enhanced = image.copy()
+        
+        # Apply gentle unsharp mask
+        sigma = 1.0  # Larger sigma for smoother sharpening
+        strength = 0.6  # Lower strength to prevent artifacts
+        
+        self.logger.info(f"     🔧 Applying moderate unsharp mask (sigma={sigma}, strength={strength})")
+        enhanced = self._apply_unsharp_mask(enhanced, sigma, strength)
+        
+        # Apply very light kernel sharpening
+        self.logger.info(f"     🔧 Applying light kernel sharpening")
+        light_kernel = np.array([[ 0, -0.25,  0],
+                                [-0.25, 2.0, -0.25],
+                                [ 0, -0.25,  0]])
+        enhanced = cv2.filter2D(enhanced, -1, light_kernel)
+        
+        # Gentle contrast boost without over-enhancement
+        if image_stats.get('contrast_ratio', 1.0) < 3.0:  # Only if low contrast
+            self.logger.info(f"     🔧 Applying gentle contrast boost")
+            # Convert to LAB for better contrast enhancement
+            lab = cv2.cvtColor(enhanced, cv2.COLOR_BGR2LAB)
+            l, a, b = cv2.split(lab)
+            
+            # Apply very gentle CLAHE
+            clahe = cv2.createCLAHE(clipLimit=1.2, tileGridSize=(8, 8))
+            l_enhanced = clahe.apply(l)
+            
+            # Merge back
+            enhanced_lab = cv2.merge([l_enhanced, a, b])
+            enhanced = cv2.cvtColor(enhanced_lab, cv2.COLOR_LAB2BGR)
+        
+        return np.clip(enhanced, 0, 255).astype(np.uint8)
+    
+    def _apply_unsharp_mask(self, image, sigma=0.8, strength=1.2, threshold=0):
+        """Apply unsharp mask for sharpening"""
+        # Convert to float
+        image_float = image.astype(np.float64)
+        
+        # Create Gaussian blur
+        blurred = cv2.GaussianBlur(image_float, (0, 0), sigma)
+        
+        # Create unsharp mask
+        mask = image_float - blurred
+        
+        # Apply threshold
+        mask = np.where(np.abs(mask) < threshold, 0, mask)
+        
+        # Apply strength and add back to original
+        sharpened = image_float + strength * mask
+        
+        # Clip values and convert back
+        sharpened = np.clip(sharpened, 0, 255).astype(np.uint8)
+        
+        return sharpened
+    
+    def _apply_aggressive_sharpening(self, image):
+        """Apply aggressive sharpening kernel for severe blur correction"""
+        
+        # Use a strong sharpening kernel
+        kernel = np.array([[ 0, -1,  0],
+                          [-1,  5, -1],
+                          [ 0, -1,  0]])
+        
+        # Apply sharpening
+        sharpened = cv2.filter2D(image, -1, kernel)
+        
+        # Ensure values stay in valid range
+        return np.clip(sharpened, 0, 255).astype(np.uint8)
+    
+    def _apply_white_background_enhancement(self, image, image_stats):
+        """
+        Apply aggressive white background enhancement to fix dark/gray backgrounds
+        """
+        
+        white_threshold = self.config.get('white_threshold', 240)
+        background_multiplier = self.config.get('background_multiplier', 1.0)
+        
+        # Create mask for likely background pixels (high brightness, low variation)
+        # Use a more aggressive threshold to catch gray backgrounds
+        background_mask = image >= white_threshold
+        
+        # Also include pixels that are reasonably bright (potential gray backgrounds)
+        gray_background_mask = (image >= 200) & (image < white_threshold)
+        
+        # Apply background enhancement
+        enhanced = image.copy().astype(np.float32)
+        
+        # Force true white backgrounds
+        if self.config.get('force_white_background', False):
+            # Force pixels above threshold to pure white (255)
+            enhanced[background_mask] = 255
+            self.logger.info(f"     🔧 Forced {np.sum(background_mask)} pixels to pure white")
+        
+        # Apply background multiplier to brighten gray areas
+        if background_multiplier > 1.0:
+            # Apply multiplier to gray background areas
+            enhanced[gray_background_mask] = np.clip(
+                enhanced[gray_background_mask] * background_multiplier, 0, 255
+            )
+            self.logger.info(f"     🔧 Enhanced {np.sum(gray_background_mask)} gray background pixels (×{background_multiplier:.2f})")
+        
+        # Additional aggressive white preservation for document backgrounds
+        if self.config.get('enhancement_mode') == 'aggressive_white_preservation':
+            # Apply a more aggressive background cleaning approach
+            
+            # Create a mask for non-text regions (likely backgrounds)
+            # Text regions have higher local variance
+            kernel = np.ones((5, 5), np.float32) / 25
+            local_mean = cv2.filter2D(image.astype(np.float32), -1, kernel)
+            variance = cv2.filter2D((image.astype(np.float32) - local_mean) ** 2, -1, kernel)
+            
+            # Low variance + high brightness = likely background
+            low_variance_mask = variance < 100  # Low local variance
+            bright_mask = image > 180  # Reasonably bright
+            aggressive_bg_mask = low_variance_mask & bright_mask
+            
+            # Force these areas to pure white
+            enhanced[aggressive_bg_mask] = 255
+            self.logger.info(f"     🔧 Aggressive white preservation: {np.sum(aggressive_bg_mask)} pixels")
+        
+        return np.clip(enhanced, 0, 255).astype(np.uint8)
     
     def _create_comparison_image(self, original, enhanced, output_folder, base_name, 
                                enhancement_steps, image_stats):

@@ -136,7 +136,7 @@ PIPELINE_CONFIG = {
             "enabled": True,  # Enabled for full pipeline
             "description": "Multi-page detection, page splitting, and ROI isolation",
             "order": 7,
-            "dependencies": ["task_6_contrast_enhancement"],  # Run after contrast enhancement
+            "dependencies": ["task_8_color_handling"],  # FIXED: Run after color handling
             "output_format": "png",
             "settings": {
                 # Multi-page detection
@@ -165,7 +165,7 @@ PIPELINE_CONFIG = {
             "enabled": True,  # Enabled for full pipeline with color management
             "description": "Intelligent color management with stamp/signature preservation and dual output",
             "order": 8,
-            "dependencies": ["task_7_multipage_segmentation"],  # Run after multipage segmentation
+            "dependencies": ["task_6_contrast_enhancement"],  # FIXED: Run after contrast enhancement (before segmentation)
             "output_format": "png",
             "settings": {
                 # Color Detection  
@@ -413,7 +413,7 @@ EXECUTION_MODES = {
     "full_pipeline": {
         "name": "Full Pipeline",
         "description": "Run all enabled tasks in sequence",
-        "tasks": ["task_9_document_deduplication", "task_1_orientation_correction", "task_2_skew_detection", "task_3_cropping", "task_4_size_dpi_standardization", "task_5_noise_reduction", "task_6_contrast_enhancement", "task_7_multipage_segmentation", "task_8_color_handling", "task_10_language_detection", "task_11_metadata_extraction", "task_12_output_specifications"]
+        "tasks": ["task_9_document_deduplication", "task_1_orientation_correction", "task_2_skew_detection", "task_3_cropping", "task_4_size_dpi_standardization", "task_5_noise_reduction", "task_6_contrast_enhancement", "task_8_color_handling", "task_7_multipage_segmentation", "task_10_language_detection", "task_11_metadata_extraction", "task_12_output_specifications"]
     },
     
     "orient_only": {
@@ -499,7 +499,7 @@ EXECUTION_MODES = {
     "with_color_handling": {
         "name": "With Color Handling",
         "description": "Run all tasks including intelligent color management",
-        "tasks": ["task_1_orientation_correction", "task_2_skew_detection", "task_3_cropping", "task_4_size_dpi_standardization", "task_5_noise_reduction", "task_6_contrast_enhancement", "task_7_multipage_segmentation", "task_8_color_handling"]
+        "tasks": ["task_1_orientation_correction", "task_2_skew_detection", "task_3_cropping", "task_4_size_dpi_standardization", "task_5_noise_reduction", "task_6_contrast_enhancement", "task_8_color_handling", "task_7_multipage_segmentation"]
     },
     
     "deduplication_only": {
@@ -539,7 +539,7 @@ EXECUTION_MODES = {
     "comprehensive_pipeline": {
         "name": "Comprehensive Document Processing",
         "description": "Complete pipeline with all analysis and standardization features",
-        "tasks": ["task_9_document_deduplication", "task_10_language_detection", "task_11_metadata_extraction", "task_1_orientation_correction", "task_2_skew_detection", "task_3_cropping", "task_4_size_dpi_standardization", "task_5_noise_reduction", "task_6_contrast_enhancement", "task_7_multipage_segmentation", "task_8_color_handling", "task_12_output_specifications"]
+        "tasks": ["task_9_document_deduplication", "task_10_language_detection", "task_11_metadata_extraction", "task_1_orientation_correction", "task_2_skew_detection", "task_3_cropping", "task_4_size_dpi_standardization", "task_5_noise_reduction", "task_6_contrast_enhancement", "task_8_color_handling", "task_7_multipage_segmentation", "task_12_output_specifications"]
     }
 }
 

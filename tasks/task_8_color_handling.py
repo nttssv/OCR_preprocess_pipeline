@@ -55,8 +55,8 @@ class ColorHandlingTask:
             # Grayscale Conversion Settings
             'grayscale_method': 'adaptive',           # 'adaptive', 'weighted', 'luminance'
             'preserve_text_contrast': True,           # Enhance text contrast during grayscale conversion
-            'contrast_enhancement_factor': 1.2,      # Factor for contrast enhancement
-            'gamma_correction': 1.1,                  # Gamma correction for grayscale conversion
+            'contrast_enhancement_factor': 1.0,      # Factor for contrast enhancement (no change)
+            'gamma_correction': 1.0,                  # Gamma correction for grayscale conversion (no darkening)
             
             # Dual Output Settings
             'enable_dual_output': True,               # Create both color and grayscale versions
@@ -252,23 +252,38 @@ class ColorHandlingTask:
         lab = cv2.cvtColor(image, cv2.COLOR_BGR2LAB)
         height, width = image.shape[:2]
         
-        # Enhanced color ranges with better thresholds
-        # Red/Orange range for stamps (more inclusive for real stamps)
-        red_lower1 = np.array([0, 50, 50])     # Lower red range
-        red_upper1 = np.array([20, 255, 255])  # Extended to include orange
-        red_lower2 = np.array([160, 50, 50])   # Upper red range  
+        # Enhanced color ranges with better thresholds for real-world documents
+        # RED/ORANGE range for stamps (VERY inclusive for stamps with various lighting)
+        red_lower1 = np.array([0, 30, 30])     # Very broad lower red range (includes pink/light red)
+        red_upper1 = np.array([25, 255, 255])  # Extended to include orange/amber
+        red_lower2 = np.array([155, 30, 30])   # Very broad upper red range  
         red_upper2 = np.array([180, 255, 255])
         
-        # Blue range for signatures (more specific)
-        blue_lower = np.array([90, 50, 50])
-        blue_upper = np.array([140, 255, 255])
+        # BLUE/PURPLE range for signatures (broader for ink variations)
+        blue_lower = np.array([85, 30, 30])    # Broader blue range (includes navy)
+        blue_upper = np.array([145, 255, 255]) # Includes purple/violet ink
         
-        # Create enhanced color masks
+        # GREEN range for additional stamps/seals
+        green_lower = np.array([40, 30, 30])
+        green_upper = np.array([85, 255, 255])
+        
+        # PURPLE/MAGENTA range for special inks
+        purple_lower = np.array([145, 30, 30])
+        purple_upper = np.array([170, 255, 255])
+        
+        # Create comprehensive color masks for all types
         red_mask1 = cv2.inRange(hsv, red_lower1, red_upper1)
         red_mask2 = cv2.inRange(hsv, red_lower2, red_upper2)
         red_mask = cv2.bitwise_or(red_mask1, red_mask2)
         
         blue_mask = cv2.inRange(hsv, blue_lower, blue_upper)
+        green_mask = cv2.inRange(hsv, green_lower, green_upper)
+        purple_mask = cv2.inRange(hsv, purple_lower, purple_upper)
+        
+        # Combine all colored regions for comprehensive detection
+        all_color_mask = cv2.bitwise_or(red_mask, blue_mask)
+        all_color_mask = cv2.bitwise_or(all_color_mask, green_mask)
+        all_color_mask = cv2.bitwise_or(all_color_mask, purple_mask)
         
         # Advanced morphological operations for better shape preservation
         kernel_small = np.ones((2, 2), np.uint8)
@@ -284,41 +299,64 @@ class ColorHandlingTask:
         
         regions = []
         
-        # Enhanced stamp detection (looking for round/circular shapes in red)
+        # Enhanced stamp detection (looking for shapes in ALL colors, not just red)
         if self.config['preserve_stamp_colors']:
-            stamp_regions = self._detect_circular_stamps(red_mask, image)
+            # Check red stamps
+            stamp_regions = self._detect_circular_stamps(red_mask, image, 'red')
             for region in stamp_regions:
                 regions.append(region)
                 x, y, w, h = region['bbox']
-                self.logger.info(f"     🔴 STAMP detected: ({x},{y},{w},{h}) confidence={region['confidence']:.1f}% circularity={region.get('circularity', 0):.2f}")
+                self.logger.info(f"     🔴 RED STAMP detected: ({x},{y},{w},{h}) confidence={region['confidence']:.1f}% circularity={region.get('circularity', 0):.2f}")
+            
+            # Check green stamps  
+            green_stamp_regions = self._detect_circular_stamps(green_mask, image, 'green')
+            for region in green_stamp_regions:
+                regions.append(region)
+                x, y, w, h = region['bbox']
+                self.logger.info(f"     🟢 GREEN STAMP detected: ({x},{y},{w},{h}) confidence={region['confidence']:.1f}% circularity={region.get('circularity', 0):.2f}")
+            
+            # Check purple stamps
+            purple_stamp_regions = self._detect_circular_stamps(purple_mask, image, 'purple')
+            for region in purple_stamp_regions:
+                regions.append(region)
+                x, y, w, h = region['bbox']
+                self.logger.info(f"     🟣 PURPLE STAMP detected: ({x},{y},{w},{h}) confidence={region['confidence']:.1f}% circularity={region.get('circularity', 0):.2f}")
         
-        # Enhanced signature detection (looking for linear/text shapes in blue)
+        # Enhanced signature detection (looking for text/linear shapes in blue/purple)
         if self.config['preserve_signature_colors']:
-            signature_regions = self._detect_linear_signatures(blue_mask, image)
+            # Check blue signatures
+            signature_regions = self._detect_linear_signatures(blue_mask, image, 'blue')
             for region in signature_regions:
                 regions.append(region)
                 x, y, w, h = region['bbox']
-                self.logger.info(f"     🔵 SIGNATURE detected: ({x},{y},{w},{h}) confidence={region['confidence']:.1f}% aspect={region.get('aspect_ratio', 0):.2f}")
+                self.logger.info(f"     🔵 BLUE SIGNATURE detected: ({x},{y},{w},{h}) confidence={region['confidence']:.1f}% aspect={region.get('aspect_ratio', 0):.2f}")
+            
+            # Check purple signatures
+            purple_sig_regions = self._detect_linear_signatures(purple_mask, image, 'purple')
+            for region in purple_sig_regions:
+                regions.append(region)
+                x, y, w, h = region['bbox']
+                self.logger.info(f"     🟣 PURPLE SIGNATURE detected: ({x},{y},{w},{h}) confidence={region['confidence']:.1f}% aspect={region.get('aspect_ratio', 0):.2f}")
         
         self.detected_regions = regions  # Store for comparison
         return regions
     
-    def _detect_circular_stamps(self, red_mask, original_image):
+    def _detect_circular_stamps(self, color_mask, original_image, color_name='unknown'):
         """
         Detect circular/round stamps in red color mask
         """
         regions = []
         
         # Find contours
-        contours, _ = cv2.findContours(red_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        contours, _ = cv2.findContours(color_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         
         for contour in contours:
             area = cv2.contourArea(contour)
             
-            # Filter by area (stamps are usually medium-sized)
-            if area < 500 or area > 50000:  # Reasonable stamp size range
+            # Filter by area (stamps are usually medium-sized) - REDUCED minimum for small stamps
+            if area < 100 or area > 50000:  # Lower minimum to catch smaller stamps
                 if area > 0:  # Debug log for filtered areas
-                    self.logger.debug(f"     🔍 Filtered red region: area={area} (size filter)")
+                    self.logger.debug(f"     🔍 Filtered {color_name} region: area={area} (size filter)")
                 continue
             
             # Get bounding rectangle
@@ -341,26 +379,26 @@ class ColorHandlingTask:
             solidity = area / hull_area if hull_area > 0 else 0
             
             # Debug log all potential stamps
-            self.logger.info(f"     🔍 Red region analysis: area={area}, circ={circularity:.2f}, aspect={aspect_ratio:.2f}, solid={solidity:.2f}")
+            self.logger.info(f"     🔍 {color_name.upper()} region analysis: area={area}, circ={circularity:.2f}, aspect={aspect_ratio:.2f}, solid={solidity:.2f}")
             
-            # Stamp criteria (relaxed for real-world stamps):
-            # 1. Reasonably circular (circularity > 0.2) - stamps can be oval or worn
-            # 2. Not too elongated (aspect ratio between 0.4 and 2.5) - allow for different stamp shapes
-            # 3. Reasonably solid shape (solidity > 0.6) - stamps might have holes or wear
-            if (circularity > 0.2 and 
-                0.4 <= aspect_ratio <= 2.5 and 
-                solidity > 0.6):
+            # RELAXED stamp criteria for real-world detection:
+            # 1. Basic circularity (circularity > 0.1) - very permissive
+            # 2. Not extremely elongated (aspect ratio between 0.3 and 3.0) - very broad
+            # 3. Some solidity (solidity > 0.4) - allows for worn stamps
+            if (circularity > 0.1 and 
+                0.3 <= aspect_ratio <= 3.0 and 
+                solidity > 0.4):
                 
                 # Calculate color confidence
-                region_mask = red_mask[y:y+h, x:x+w]
+                region_mask = color_mask[y:y+h, x:x+w]
                 color_pixels = np.sum(region_mask > 0)
                 total_pixels = region_mask.shape[0] * region_mask.shape[1]
                 confidence = (color_pixels / total_pixels) * 100
                 
-                self.logger.info(f"     🎯 Stamp candidate passed shape tests: confidence={confidence:.1f}%")
+                self.logger.info(f"     🎯 {color_name.upper()} stamp candidate passed shape tests: confidence={confidence:.1f}%")
                 
-                # Lower threshold for stamps since they often have white text inside
-                if confidence >= 15:  # Reduced threshold for stamps
+                # VERY LOW threshold for stamps (many stamps have light areas or text)
+                if confidence >= 5:  # Very permissive threshold
                     # Expand region slightly to ensure full stamp is captured
                     expansion = 15  # Larger expansion for stamps
                     height, width = original_image.shape[:2]
@@ -381,20 +419,20 @@ class ColorHandlingTask:
         
         return regions
     
-    def _detect_linear_signatures(self, blue_mask, original_image):
+    def _detect_linear_signatures(self, color_mask, original_image, color_name='unknown'):
         """
-        Detect linear/text-like signatures in blue color mask
+        Detect linear/text-like signatures in color mask
         """
         regions = []
         
         # Find contours
-        contours, _ = cv2.findContours(blue_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        contours, _ = cv2.findContours(color_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         
         for contour in contours:
             area = cv2.contourArea(contour)
             
-            # Filter by area (signatures are usually smaller than stamps)
-            if area < 200 or area > 20000:  # Reasonable signature size range
+            # Filter by area (signatures are usually smaller than stamps) - REDUCED minimum
+            if area < 50 or area > 20000:  # Much lower minimum to catch small signatures
                 continue
             
             # Get bounding rectangle
@@ -403,18 +441,21 @@ class ColorHandlingTask:
             # Calculate shape properties for signature detection
             aspect_ratio = w / h if h > 0 else 0
             
-            # Signature criteria:
-            # 1. More elongated than stamps (aspect ratio > 1.5 or < 0.7)
-            # 2. Reasonable size
-            if aspect_ratio > 1.5 or aspect_ratio < 0.7:
+            # VERY RELAXED signature criteria (signatures come in many forms):
+            # 1. Any reasonable aspect ratio (not a perfect square)
+            # 2. Reasonable size (already filtered above)
+            if aspect_ratio > 0.5 or aspect_ratio < 0.5:  # Almost any shape
                 
                 # Calculate color confidence
-                region_mask = blue_mask[y:y+h, x:x+w]
+                region_mask = color_mask[y:y+h, x:x+w]
                 color_pixels = np.sum(region_mask > 0)
                 total_pixels = region_mask.shape[0] * region_mask.shape[1]
                 confidence = (color_pixels / total_pixels) * 100
                 
-                if confidence >= 20:  # Reasonable threshold for signatures
+                self.logger.info(f"     🔍 {color_name.upper()} signature analysis: area={area}, aspect={aspect_ratio:.2f}, confidence={confidence:.1f}%")
+                
+                # VERY LOW threshold for signatures (ink can be light or faded)
+                if confidence >= 3:  # Very permissive threshold for signatures
                     # Expand region slightly
                     expansion = 10
                     height, width = original_image.shape[:2]
@@ -476,11 +517,22 @@ class ColorHandlingTask:
             # Adaptive method based on image characteristics
             gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
             
-            # Enhance contrast for better OCR
+            # Enhance contrast for better OCR while preserving brightness
             if self.config['preserve_text_contrast']:
-                # Apply CLAHE for local contrast enhancement
-                clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+                # Apply very conservative CLAHE to avoid darkening
+                clip_limit = min(1.2, self.config.get('contrast_enhancement_factor', 1.0) * 1.2)
+                clahe = cv2.createCLAHE(clipLimit=clip_limit, tileGridSize=(16, 16))  # Larger tiles for gentler effect
                 gray = clahe.apply(gray)
+                self.logger.info(f"     📊 Applied conservative CLAHE with clip limit: {clip_limit}")
+                
+                # Brightness preservation: ensure we don't darken the image
+                original_brightness = np.mean(gray)
+                if original_brightness > 0:
+                    # Normalize to preserve overall brightness level
+                    brightness_factor = 1.02  # Slight brightness boost to counteract any darkening
+                    gray = np.clip(gray.astype(np.float32) * brightness_factor, 0, 255).astype(np.uint8)
+                    new_brightness = np.mean(gray)
+                    self.logger.info(f"     💡 Brightness preservation: {original_brightness:.1f} → {new_brightness:.1f}")
         
         # Convert grayscale back to 3-channel
         grayscale_3ch = cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
@@ -500,10 +552,25 @@ class ColorHandlingTask:
         # Apply grayscale only to non-color regions
         # Where preserve_mask is 255 (white), keep original color
         # Where preserve_mask is 0 (black), use grayscale
+        
+        # Store original brightness for preservation
+        original_brightness = np.mean(result_image)
+        
         for c in range(3):  # For each color channel
             result_image[:, :, c] = np.where(preserve_mask == 255, 
                                            result_image[:, :, c],  # Keep original color
                                            grayscale_3ch[:, :, c])  # Use grayscale
+        
+        # Brightness preservation: ensure final result maintains brightness
+        final_brightness = np.mean(result_image)
+        if original_brightness > 0 and final_brightness > 0:
+            brightness_ratio = original_brightness / final_brightness
+            if brightness_ratio > 1.02:  # Only adjust if there's significant darkening
+                # Apply gentle brightness correction
+                brightness_correction = min(1.1, brightness_ratio)  # Cap the correction
+                result_image = np.clip(result_image.astype(np.float32) * brightness_correction, 0, 255).astype(np.uint8)
+                corrected_brightness = np.mean(result_image)
+                self.logger.info(f"     💡 Brightness correction: {final_brightness:.1f} → {corrected_brightness:.1f} (factor: {brightness_correction:.3f})")
         
         # Log preservation details
         preserved_regions = len(color_regions)
@@ -525,8 +592,10 @@ class ColorHandlingTask:
         self.logger.info(f"     ✅ Color preservation complete: {preserved_regions} regions preserved ({preservation_percentage_actual:.1f}% of image)")
         
         # Apply final enhancements to non-color regions only
-        if self.config.get('gamma_correction', 1.0) != 1.0:
+        if self.config.get('gamma_correction', 1.0) != 1.0 and self.config.get('gamma_correction', 1.0) < 1.0:
+            # Only apply gamma correction if it's brightening (< 1.0), not darkening (> 1.0)
             gamma = self.config['gamma_correction']
+            self.logger.info(f"     🔆 Applying brightness gamma correction: {gamma}")
             # Apply gamma correction only to grayscale areas
             enhanced = np.power(result_image / 255.0, gamma) * 255.0
             enhanced = enhanced.astype(np.uint8)
@@ -536,6 +605,8 @@ class ColorHandlingTask:
                 result_image[:, :, c] = np.where(preserve_mask == 255,
                                                result_image[:, :, c],  # Keep original color regions
                                                enhanced[:, :, c])      # Use enhanced grayscale
+        elif self.config.get('gamma_correction', 1.0) > 1.0:
+            self.logger.info(f"     ⚠️  Skipping darkening gamma correction: {self.config.get('gamma_correction', 1.0)}")
         
         return result_image
     

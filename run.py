@@ -207,27 +207,44 @@ class IntelligentDocumentProcessor:
             
             processing_time = time.time() - start_time
             
-            # Copy final result to output folder
+            # Copy final result(s) to output folder
             output_result_path = None
+            output_result_paths = []
             if result:
-                # Find the final output from the last successful task
-                final_output = None
-                for task_id in reversed(enabled_tasks):
-                    if task_id in result and result[task_id].get('output'):
-                        final_output = result[task_id]['output']
-                        break
-                
-                if final_output and os.path.exists(final_output):
-                    import shutil
-                    final_result_path = os.path.join(file_output_folder, f"{os.path.splitext(filename)[0]}_result.png")
-                    shutil.copy2(final_output, final_result_path)
-                    output_result_path = final_result_path
-                    
-                    # Generate comparison image (original vs final result) if enabled
-                    if self.enable_comparisons:
-                        comparison_path = os.path.join(file_output_folder, f"{os.path.splitext(filename)[0]}_comparison.png")
-                        if self.generate_comparison(file_path, final_result_path, comparison_path):
-                            print(f"📊 Generated comparison: {os.path.basename(comparison_path)}")
+                # Check if we have multi-page results from task_7_multipage_segmentation
+                multipage_result = result.get('task_7_multipage_segmentation')
+                if multipage_result and multipage_result.get('pages_detected', 0) > 1:
+                    # Handle multi-page documents
+                    all_outputs = multipage_result.get('all_outputs', [])
+                    if all_outputs:
+                        base_filename = os.path.splitext(filename)[0]
+                        import shutil
+                        
+                        for i, page_output in enumerate(all_outputs):
+                            if os.path.exists(page_output):
+                                # Create result file with format {filename}_result1.png, {filename}_result2.png, etc.
+                                result_filename = f"{base_filename}_result{i+1}.png"
+                                result_path = os.path.join(file_output_folder, result_filename)
+                                shutil.copy2(page_output, result_path)
+                                output_result_paths.append(result_path)
+                                print(f"📄 Generated multi-page result: {result_filename}")
+                        
+                        # Set primary output to first page
+                        output_result_path = output_result_paths[0] if output_result_paths else None
+                        
+                        # Generate comparison image for multi-page (use first page) if enabled
+                        if self.enable_comparisons and output_result_path:
+                            comparison_path = os.path.join(file_output_folder, f"{base_filename}_comparison.png")
+                            if self.generate_comparison(file_path, output_result_path, comparison_path):
+                                print(f"📊 Generated comparison: {os.path.basename(comparison_path)}")
+                    else:
+                        # Fallback to single page handling
+                        self._handle_single_page_result(result, enabled_tasks, file_path, file_output_folder, filename)
+                else:
+                    # Handle single-page documents
+                    output_result_path = self._handle_single_page_result(result, enabled_tasks, file_path, file_output_folder, filename)
+                    if output_result_path:
+                        output_result_paths = [output_result_path]
 
             # Record page hash in index to support dedup across runs
             try:
@@ -330,6 +347,31 @@ class IntelligentDocumentProcessor:
                         'error': str(e),
                         'duration': 0
                     })
+    
+    def _handle_single_page_result(self, result, enabled_tasks, file_path, file_output_folder, filename):
+        """Handle result generation for single-page documents"""
+        
+        # Find the final output from the last successful task
+        final_output = None
+        for task_id in reversed(enabled_tasks):
+            if task_id in result and result[task_id].get('output'):
+                final_output = result[task_id]['output']
+                break
+        
+        if final_output and os.path.exists(final_output):
+            import shutil
+            final_result_path = os.path.join(file_output_folder, f"{os.path.splitext(filename)[0]}_result.png")
+            shutil.copy2(final_output, final_result_path)
+            
+            # Generate comparison image (original vs final result) if enabled
+            if self.enable_comparisons:
+                comparison_path = os.path.join(file_output_folder, f"{os.path.splitext(filename)[0]}_comparison.png")
+                if self.generate_comparison(file_path, final_result_path, comparison_path):
+                    print(f"📊 Generated comparison: {os.path.basename(comparison_path)}")
+            
+            return final_result_path
+        
+        return None
         
         total_time = time.time() - start_time
         

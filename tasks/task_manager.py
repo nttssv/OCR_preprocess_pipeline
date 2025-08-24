@@ -45,7 +45,7 @@ class TaskManager:
             "task_12_output_specifications": OutputSpecificationsTask(logger=logger)
         }
         
-        # Task dependencies
+        # Task dependencies - FIXED: Color handling runs before multipage segmentation!
         self.dependencies = {
             "task_1_orientation_correction": [],
             "task_2_skew_detection": ["task_1_orientation_correction"],
@@ -53,15 +53,15 @@ class TaskManager:
             "task_4_size_dpi_standardization": ["task_3_cropping"],
             "task_5_noise_reduction": ["task_4_size_dpi_standardization"],
             "task_6_contrast_enhancement": ["task_5_noise_reduction"],
-            "task_7_multipage_segmentation": ["task_6_contrast_enhancement"],  # Run after contrast enhancement
-            "task_8_color_handling": ["task_7_multipage_segmentation"],  # Run after multipage segmentation
+            "task_7_multipage_segmentation": ["task_8_color_handling"],  # FIXED: Run after color handling
+            "task_8_color_handling": ["task_6_contrast_enhancement"],  # FIXED: Run after contrast enhancement (before segmentation)
             "task_9_document_deduplication": [],  # Can run independently
             "task_10_language_detection": ["task_9_document_deduplication"],  # Run after deduplication
             "task_11_metadata_extraction": ["task_10_language_detection"],  # Run after language detection
             "task_12_output_specifications": ["task_11_metadata_extraction"]  # Run after metadata extraction
         }
         
-                # Task execution order
+                # Task execution order - FIXED: Color handling before segmentation!
         self.execution_order = [
             "task_9_document_deduplication",    # Run first to detect duplicates
             "task_10_language_detection",       # Early language analysis
@@ -72,8 +72,8 @@ class TaskManager:
             "task_4_size_dpi_standardization",
             "task_5_noise_reduction",
             "task_6_contrast_enhancement",
-            "task_7_multipage_segmentation",
-            "task_8_color_handling",
+            "task_8_color_handling",            # FIXED: Run before segmentation to preserve colors
+            "task_7_multipage_segmentation",    # FIXED: Run after color handling
             "task_12_output_specifications"     # Final standardized output
         ]
     

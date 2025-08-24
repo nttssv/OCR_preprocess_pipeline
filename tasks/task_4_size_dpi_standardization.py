@@ -16,9 +16,24 @@ class SizeDPIStandardizationTask:
     def __init__(self, logger):
         self.logger = logger
         self.task_name = "Size & DPI Standardization"
-        self.target_dpi = 250
-        self.standard_width = 2079  # A4 width at 250 DPI (8.27 inches)
-        self.standard_height = 2923  # A4 height at 250 DPI (11.69 inches)
+        
+        # Default configuration
+        self.config = {
+            'target_dpi': 250,
+            'standard_width': 2079,  # A4 width at 250 DPI (8.27 inches)
+            'standard_height': 2923,  # A4 height at 250 DPI (11.69 inches)
+            'enhancement_methods': ["clahe", "denoising", "sharpening"],
+            'maintain_aspect_ratio': True,
+            'sharpening_strength': 1.0,
+            'use_lanczos_only': False,
+            'preserve_white_background': False,
+            'background_brightness_target': 255
+        }
+        
+        # Legacy properties for backward compatibility
+        self.target_dpi = self.config['target_dpi']
+        self.standard_width = self.config['standard_width']
+        self.standard_height = self.config['standard_height']
         
     def run(self, input_file, file_type, output_folder):
         """
@@ -136,8 +151,17 @@ class SizeDPIStandardizationTask:
                                              interpolation=cv2.INTER_LANCZOS4)
                 
                 # Apply advanced sharpening after upscaling to reduce blur
-                self.logger.info(f"   🔪 Applying advanced sharpening after upscaling...")
-                resized_image = self._advanced_sharpen_image(resized_image, scale_factor)
+                # BUT skip aggressive sharpening if preserving white background
+                if self.config.get('preserve_white_background', False):
+                    self.logger.info(f"   🔧 Preserving white background - using minimal sharpening only")
+                    # Very light sharpening only
+                    kernel = np.array([[ 0, -0.05,  0],
+                                      [-0.05, 1.2, -0.05],
+                                      [ 0, -0.05,  0]])
+                    resized_image = cv2.filter2D(resized_image, -1, kernel)
+                else:
+                    self.logger.info(f"   🔪 Applying advanced sharpening after upscaling...")
+                    resized_image = self._advanced_sharpen_image(resized_image, scale_factor)
             else:
                 # Downscaling: Use INTER_AREA for best quality
                 self.logger.info(f"   📏 Downscaling by {scale_factor:.2f}x - using INTER_AREA interpolation")
@@ -189,46 +213,169 @@ class SizeDPIStandardizationTask:
             return None, None
     
     def _enhance_for_ocr(self, image):
-        """Very conservative enhancement that preserves background brightness"""
+        """Enhanced OCR optimization with multiple enhancement modes"""
         
-        # Convert to grayscale for analysis
-        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        # If preserving white background, check for special sharpening config
+        if self.config.get('preserve_white_background', False):
+            # BUT if we have special sharpening config, apply that
+            if (self.config.get('apply_unsharp_mask', False) or 
+                self.config.get('post_sharpen_kernel')):
+                self.logger.info(f"   🔪 Applying ENHANCED SHARPENING for blur correction")
+                return self._apply_enhanced_sharpening(image)
+            else:
+                self.logger.info(f"   🔧 Preserving white background - skipping OCR enhancement")
+                return image  # Return image unchanged
         
-        # Check if the image has bright background (most documents should)
-        mean_brightness = np.mean(gray)
-        is_bright_background = mean_brightness > 128
+        # Check for moderate sharpening mode (prevents artifacts)
+        elif self.config.get('enhancement_mode') == 'moderate_sharpening':
+            self.logger.info(f"   🔧 Applying MODERATE SHARPENING (artifact prevention)")
+            return self._apply_moderate_sharpening(image)
         
-        if not is_bright_background:
-            # For dark images, apply minimal processing to avoid darkening further
-            self.logger.info(f"   📝 Dark background detected (brightness: {mean_brightness:.1f}) - minimal processing")
-            
-            # Just light sharpening, no contrast adjustment
-            kernel = np.array([[ 0, -0.05,  0],
-                              [-0.05, 1.2, -0.05],
-                              [ 0, -0.05,  0]])
-            sharpened = cv2.filter2D(gray, -1, kernel)
-            enhanced_bgr = cv2.cvtColor(sharpened, cv2.COLOR_GRAY2BGR)
-            
+        # Standard enhancement for normal documents
         else:
-            # For bright backgrounds, apply very gentle enhancement
-            self.logger.info(f"   📝 Bright background detected (brightness: {mean_brightness:.1f}) - gentle enhancement")
+            # Convert to grayscale for analysis
+            gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
             
-            # Very minimal CLAHE to avoid darkening
-            clahe = cv2.createCLAHE(clipLimit=1.1, tileGridSize=(32, 32))  # Even more conservative
-            enhanced = clahe.apply(gray)
+            # Check if the image has bright background (most documents should)
+            mean_brightness = np.mean(gray)
+            is_bright_background = mean_brightness > 128
             
-            # Ensure we don't darken the image
-            enhanced = np.maximum(enhanced, gray)  # Take the brighter of original or enhanced
+            if not is_bright_background:
+                # For dark images, apply minimal processing to avoid darkening further
+                self.logger.info(f"   📝 Dark background detected (brightness: {mean_brightness:.1f}) - minimal processing")
+                
+                # Just light sharpening, no contrast adjustment
+                kernel = np.array([[ 0, -0.05,  0],
+                                  [-0.05, 1.2, -0.05],
+                                  [ 0, -0.05,  0]])
+                sharpened = cv2.filter2D(gray, -1, kernel)
+                enhanced_bgr = cv2.cvtColor(sharpened, cv2.COLOR_GRAY2BGR)
+                
+            else:
+                # For bright backgrounds, apply very gentle enhancement
+                self.logger.info(f"   📝 Bright background detected (brightness: {mean_brightness:.1f}) - gentle enhancement")
+                
+                # Very minimal CLAHE to avoid darkening
+                clahe = cv2.createCLAHE(clipLimit=1.1, tileGridSize=(32, 32))  # Even more conservative
+                enhanced = clahe.apply(gray)
+                
+                # Ensure we don't darken the image
+                enhanced = np.maximum(enhanced, gray)  # Take the brighter of original or enhanced
+                
+                # Very light sharpening only
+                kernel = np.array([[-0.05, -0.05, -0.05],
+                                  [-0.05,  1.25, -0.05],
+                                  [-0.05, -0.05, -0.05]])
+                sharpened = cv2.filter2D(enhanced, -1, kernel)
+                
+                enhanced_bgr = cv2.cvtColor(sharpened, cv2.COLOR_GRAY2BGR)
             
-            # Very light sharpening only
-            kernel = np.array([[-0.05, -0.05, -0.05],
-                              [-0.05,  1.25, -0.05],
-                              [-0.05, -0.05, -0.05]])
-            sharpened = cv2.filter2D(enhanced, -1, kernel)
-            
-            enhanced_bgr = cv2.cvtColor(sharpened, cv2.COLOR_GRAY2BGR)
+            return enhanced_bgr
+    
+    def _apply_enhanced_sharpening(self, image):
+        """Apply enhanced sharpening for blur correction"""
         
-        return enhanced_bgr
+        enhanced = image.copy()
+        
+        # Step 1: Apply unsharp mask if configured
+        if self.config.get('apply_unsharp_mask', False):
+            sigma = self.config.get('unsharp_sigma', 1.0)
+            strength = self.config.get('unsharp_strength', 1.5)
+            
+            self.logger.info(f"   🔪 Applying unsharp mask (sigma={sigma}, strength={strength})")
+            enhanced = self._apply_unsharp_mask(enhanced, sigma, strength)
+        
+        # Step 2: Apply kernel sharpening if configured
+        kernel_type = self.config.get('post_sharpen_kernel')
+        if kernel_type:
+            self.logger.info(f"   🔪 Applying {kernel_type} kernel sharpening")
+            enhanced = self._apply_kernel_sharpening(enhanced, kernel_type)
+        
+        return enhanced
+    
+    def _apply_moderate_sharpening(self, image):
+        """Apply moderate sharpening that prevents artifacts while improving quality"""
+        
+        enhanced = image.copy()
+        
+        # Step 1: Apply moderate unsharp mask if configured
+        if self.config.get('apply_unsharp_mask', False):
+            sigma = self.config.get('unsharp_sigma', 1.2)  # Larger sigma = smoother
+            strength = self.config.get('unsharp_strength', 0.8)  # Lower strength = less artifacts
+            
+            self.logger.info(f"   🔧 Applying moderate unsharp mask (sigma={sigma}, strength={strength})")
+            enhanced = self._apply_unsharp_mask(enhanced, sigma, strength)
+        
+        # Step 2: Apply light kernel sharpening
+        kernel_type = self.config.get('post_sharpen_kernel', 'light')
+        if kernel_type:
+            self.logger.info(f"   🔧 Applying {kernel_type} kernel sharpening")
+            enhanced = self._apply_kernel_sharpening(enhanced, kernel_type)
+        
+        # Step 3: Apply gentle CLAHE for better contrast without over-enhancement
+        if self.config.get('apply_clahe', False):
+            clip_limit = self.config.get('clahe_clip_limit', 1.5)
+            self.logger.info(f"   🔧 Applying gentle CLAHE (clip_limit={clip_limit})")
+            
+            # Convert to LAB color space for better CLAHE results
+            lab = cv2.cvtColor(enhanced, cv2.COLOR_BGR2LAB)
+            l, a, b = cv2.split(lab)
+            
+            # Apply CLAHE only to L channel
+            clahe = cv2.createCLAHE(clipLimit=clip_limit, tileGridSize=(8, 8))
+            l_enhanced = clahe.apply(l)
+            
+            # Merge back
+            enhanced_lab = cv2.merge([l_enhanced, a, b])
+            enhanced = cv2.cvtColor(enhanced_lab, cv2.COLOR_LAB2BGR)
+        
+        return enhanced
+    
+    def _apply_unsharp_mask(self, image, sigma=1.0, strength=1.5, threshold=0):
+        """Apply unsharp mask for sharpening"""
+        # Convert to float
+        image_float = image.astype(np.float64)
+        
+        # Create Gaussian blur
+        blurred = cv2.GaussianBlur(image_float, (0, 0), sigma)
+        
+        # Create unsharp mask
+        mask = image_float - blurred
+        
+        # Apply threshold
+        mask = np.where(np.abs(mask) < threshold, 0, mask)
+        
+        # Apply strength and add back to original
+        sharpened = image_float + strength * mask
+        
+        # Clip values and convert back
+        sharpened = np.clip(sharpened, 0, 255).astype(np.uint8)
+        
+        return sharpened
+    
+    def _apply_kernel_sharpening(self, image, kernel_type="standard"):
+        """Apply different kernel-based sharpening"""
+        
+        kernels = {
+            "light": np.array([[ 0, -0.1,  0],
+                              [-0.1, 1.4, -0.1],
+                              [ 0, -0.1,  0]]),
+            
+            "standard": np.array([[ 0, -1,  0],
+                                 [-1,  5, -1],
+                                 [ 0, -1,  0]]),
+            
+            "strong": np.array([[-1, -1, -1],
+                               [-1,  9, -1],
+                               [-1, -1, -1]]),
+            
+            "conservative": np.array([[ 0, -0.25,  0],
+                                     [-0.25, 2.0, -0.25],
+                                     [ 0, -0.25,  0]])
+        }
+        
+        kernel = kernels.get(kernel_type, kernels["standard"])
+        return cv2.filter2D(image, -1, kernel)
     
     def _sharpen_image(self, image):
         """Apply advanced sharpening to reduce blur from upscaling"""
@@ -308,41 +455,45 @@ class SizeDPIStandardizationTask:
             return self._sharpen_image(image)
     
     def _aggressive_sharpen_image(self, image):
-        """Aggressive sharpening for very high upscaling factors"""
+        """Aggressive sharpening for very high upscaling factors - CONSERVATIVE VERSION"""
         
         # Convert to float for better precision
         image_float = image.astype(np.float32) / 255.0
         
-        # First pass: Unsharp mask
+        # Very light unsharp mask to avoid massive darkening
         blurred = cv2.GaussianBlur(image_float, (3, 3), 1.0)
-        unsharp = image_float + 0.8 * (image_float - blurred)
+        unsharp = image_float + 0.3 * (image_float - blurred)  # Reduced from 0.8 to 0.3
         
-        # Second pass: Edge enhancement
-        kernel = np.array([[-0.5, -1, -0.5],
-                          [-1,   7,  -1],
-                          [-0.5, -1, -0.5]])
+        # Much lighter edge enhancement
+        kernel = np.array([[-0.2, -0.3, -0.2],
+                          [-0.3,  2.8,  -0.3],  # Reduced from 7 to 2.8
+                          [-0.2, -0.3, -0.2]])
         enhanced = cv2.filter2D(unsharp, -1, kernel)
         
-        # Combine and clip
-        result = np.clip(enhanced, 0, 1)
+        # Prevent significant darkening
+        result = np.maximum(enhanced, image_float * 0.8)  # Ensure we don't go too dark
+        result = np.clip(result, 0, 1)
         return (result * 255).astype(np.uint8)
     
     def _strong_sharpen_image(self, image):
-        """Strong sharpening for high upscaling factors"""
+        """Strong sharpening for high upscaling factors - CONSERVATIVE VERSION"""
         
+        # Much more conservative sharpening to prevent darkening
         image_float = image.astype(np.float32) / 255.0
         
-        # Unsharp mask with stronger effect
+        # Very light unsharp mask to avoid darkening
         blurred = cv2.GaussianBlur(image_float, (3, 3), 0.8)
-        unsharp = image_float + 0.6 * (image_float - blurred)
+        unsharp = image_float + 0.2 * (image_float - blurred)  # Reduced from 0.6 to 0.2
         
-        # Edge sharpening kernel
-        kernel = np.array([[-0.25, -0.5, -0.25],
-                          [-0.5,   4.0,  -0.5],
-                          [-0.25, -0.5, -0.25]])
+        # Much lighter edge sharpening kernel
+        kernel = np.array([[-0.1, -0.2, -0.1],
+                          [-0.2,  2.2,  -0.2],  # Reduced from 4.0 to 2.2
+                          [-0.1, -0.2, -0.1]])
         sharpened = cv2.filter2D(unsharp, -1, kernel)
         
-        result = np.clip(sharpened, 0, 1)
+        # Ensure we don't darken the image significantly
+        result = np.maximum(sharpened, image_float * 0.85)  # Prevent massive darkening
+        result = np.clip(result, 0, 1)
         return (result * 255).astype(np.uint8)
     
     def _create_comparison_image(self, original, processed, output_path, 
