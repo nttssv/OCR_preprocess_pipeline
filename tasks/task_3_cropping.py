@@ -17,6 +17,7 @@ class DocumentCroppingTask:
         self.logger = logger or logging.getLogger(__name__)
         self.task_name = "Document Cropping"
         self.task_id = "task_3_cropping"
+        self.config = {}
         
     def run(self, input_file, file_type, output_folder):
         """
@@ -90,8 +91,13 @@ class DocumentCroppingTask:
             
             # Find text rows
             text_rows = [i for i, has_text in enumerate(row_has_text) if has_text]
-            first_text_row = min(text_rows)
-            last_text_row = max(text_rows)
+            if not text_rows:
+                # Fallback: use entire image if no text detected
+                first_text_row = 0
+                last_text_row = height - 1
+            else:
+                first_text_row = min(text_rows)
+                last_text_row = max(text_rows)
             
             # Analyze columns
             col_has_text = []
@@ -104,8 +110,13 @@ class DocumentCroppingTask:
             
             # Find text columns
             text_cols = [i for i, has_text in enumerate(col_has_text) if has_text]
-            first_text_col = min(text_cols)
-            last_text_col = max(text_cols)
+            if not text_cols:
+                # Fallback: use entire image if no text detected
+                first_text_col = 0
+                last_text_col = width - 1
+            else:
+                first_text_col = min(text_cols)
+                last_text_col = max(text_cols)
             
             # Define main text block
             text_block_x = first_text_col
@@ -191,72 +202,91 @@ class DocumentCroppingTask:
             self.logger.info(f"   📍 Extreme-tight cropping area: {crop_width}x{crop_height} at ({left_boundary}, {top_boundary})")
             self.logger.info(f"   📊 Cropped area: {(crop_width * crop_height) / (width * height) * 100:.1f}% of image")
             
-            # Step 4: Final cleaning of any remaining artifacts
-            self.logger.info("   🔧 Step 4: Final cleaning of remaining artifacts...")
-            
-            # Convert cropped to grayscale
-            cropped_gray = cv2.cvtColor(cropped_image, cv2.COLOR_BGR2GRAY)
-            
-            # Remove any remaining punch holes
-            _, cropped_dark = cv2.threshold(cropped_gray, 100, 255, cv2.THRESH_BINARY_INV)
-            cropped_dark = cv2.morphologyEx(cropped_dark, cv2.MORPH_OPEN, np.ones((3, 3), np.uint8))
-            
-            hole_contours_cropped, _ = cv2.findContours(cropped_dark, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-            
+            # Step 4: Final cleaning of any remaining artifacts (skip in fast mode)
             holes_removed = 0
-            for contour in hole_contours_cropped:
-                area = cv2.contourArea(contour)
-                if 15 <= area <= 400:
-                    perimeter = cv2.arcLength(contour, True)
-                    if perimeter > 0:
-                        circularity = 4 * np.pi * area / (perimeter * perimeter)
-                        if circularity > 0.5:
-                            mask = np.zeros_like(cropped_gray)
-                            cv2.drawContours(mask, [contour], -1, 255, -1)
-                            cropped_image = cv2.inpaint(cropped_image, mask, 3, cv2.INPAINT_NS)
-                            holes_removed += 1
+            edges_removed = 0
             
-            self.logger.info(f"   ✅ Removed {holes_removed} remaining punch holes")
-            
-            # Remove any remaining scanner edges
-            cropped_edges = cv2.Canny(cropped_gray, 25, 75)
-            horizontal_kernel = np.ones((1, 20), np.uint8)
-            vertical_kernel = np.ones((20, 1), np.uint8)
-            
-            horizontal_lines = cv2.morphologyEx(cropped_edges, cv2.MORPH_OPEN, horizontal_kernel)
-            vertical_lines = cv2.morphologyEx(cropped_edges, cv2.MORPH_OPEN, vertical_kernel)
-            
-            scanner_artifacts = cv2.bitwise_or(horizontal_lines, vertical_lines)
-            scanner_artifacts = cv2.dilate(scanner_artifacts, np.ones((2, 2), np.uint8))
-            
-            mask = scanner_artifacts.astype(np.uint8)
-            edges_removed = np.sum(mask > 0)
-            
-            if edges_removed > 0:
-                blurred = cv2.medianBlur(cropped_image, 3)
-                mask_3d = cv2.cvtColor(mask, cv2.COLOR_GRAY2BGR)
-                mask_normalized = mask_3d.astype(np.float32) / 255.0
+            if not self.config.get('fast_mode', False) and not self.config.get('skip_artifact_removal', False):
+                self.logger.info("   🔧 Step 4: Final cleaning of remaining artifacts...")
                 
-                cropped_image = (cropped_image.astype(np.float32) * (1 - mask_normalized) + 
-                                blurred.astype(np.float32) * mask_normalized).astype(np.uint8)
+                # Convert cropped to grayscale
+                cropped_gray = cv2.cvtColor(cropped_image, cv2.COLOR_BGR2GRAY)
+                
+                # Remove any remaining punch holes
+                _, cropped_dark = cv2.threshold(cropped_gray, 100, 255, cv2.THRESH_BINARY_INV)
+                cropped_dark = cv2.morphologyEx(cropped_dark, cv2.MORPH_OPEN, np.ones((3, 3), np.uint8))
+                
+                hole_contours_cropped, _ = cv2.findContours(cropped_dark, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+                
+                for contour in hole_contours_cropped:
+                    area = cv2.contourArea(contour)
+                    if 15 <= area <= 400:
+                        perimeter = cv2.arcLength(contour, True)
+                        if perimeter > 0:
+                            circularity = 4 * np.pi * area / (perimeter * perimeter)
+                            if circularity > 0.5:
+                                mask = np.zeros_like(cropped_gray)
+                                cv2.drawContours(mask, [contour], -1, 255, -1)
+                                cropped_image = cv2.inpaint(cropped_image, mask, 3, cv2.INPAINT_NS)
+                                holes_removed += 1
+                
+                self.logger.info(f"   ✅ Removed {holes_removed} remaining punch holes")
+            else:
+                self.logger.info("   ⚡ Skipping artifact removal for fast mode")
+                cropped_gray = cv2.cvtColor(cropped_image, cv2.COLOR_BGR2GRAY)
             
-            self.logger.info(f"   ✅ Removed {edges_removed} remaining scanner edges")
+            # Remove any remaining scanner edges (skip in fast mode)
+            if not self.config.get('fast_mode', False) and not self.config.get('skip_artifact_removal', False):
+                cropped_edges = cv2.Canny(cropped_gray, 25, 75)
+                horizontal_kernel = np.ones((1, 20), np.uint8)
+                vertical_kernel = np.ones((20, 1), np.uint8)
+                
+                horizontal_lines = cv2.morphologyEx(cropped_edges, cv2.MORPH_OPEN, horizontal_kernel)
+                vertical_lines = cv2.morphologyEx(cropped_edges, cv2.MORPH_OPEN, vertical_kernel)
+                
+                scanner_artifacts = cv2.bitwise_or(horizontal_lines, vertical_lines)
+                scanner_artifacts = cv2.dilate(scanner_artifacts, np.ones((2, 2), np.uint8))
+                
+                mask = scanner_artifacts.astype(np.uint8)
+                edges_removed = np.sum(mask > 0)
+                
+                if edges_removed > 0:
+                    blurred = cv2.medianBlur(cropped_image, 3)
+                    mask_3d = cv2.cvtColor(mask, cv2.COLOR_GRAY2BGR)
+                    mask_normalized = mask_3d.astype(np.float32) / 255.0
+                    
+                    cropped_image = cropped_image.astype(np.float32)
+                    blurred = blurred.astype(np.float32)
+                    
+                    cropped_image = cropped_image * (1 - mask_normalized) + blurred * mask_normalized
+                    cropped_image = cropped_image.astype(np.uint8)
+                
+                self.logger.info(f"   ✅ Removed {edges_removed} remaining scanner edges")
+            else:
+                self.logger.info("   ⚡ Skipping edge removal for fast mode")
             
-            # Step 5: Quality check
-            self.logger.info("   🔍 Step 5: Quality check...")
+            # Step 5: Quality check (skip in fast mode)
+            if not self.config.get('fast_mode', False) and not self.config.get('skip_quality_check', False):
+                self.logger.info("   🔍 Step 5: Quality check...")
+                
+                # Check final image quality
+                final_gray = cv2.cvtColor(cropped_image, cv2.COLOR_BGR2GRAY)
+                
+                # Check for remaining dark areas
+                _, final_dark = cv2.threshold(final_gray, 120, 255, cv2.THRESH_BINARY_INV)
+                remaining_dark_pixels = np.sum(final_dark > 0)
+            else:
+                self.logger.info("   ⚡ Skipping quality check for fast mode")
+                final_gray = cv2.cvtColor(cropped_image, cv2.COLOR_BGR2GRAY)
+                remaining_dark_pixels = 0
             
-            # Check final image quality
-            final_gray = cv2.cvtColor(cropped_image, cv2.COLOR_BGR2GRAY)
-            
-            # Check for remaining dark areas
-            _, final_dark = cv2.threshold(final_gray, 120, 255, cv2.THRESH_BINARY_INV)
-            remaining_dark_pixels = np.sum(final_dark > 0)
-            
-            # Check for remaining edges
-            final_edges = cv2.Canny(final_gray, 30, 90)
-            remaining_edge_pixels = np.sum(final_edges > 0)
-            
-            self.logger.info(f"   📊 Final quality: {remaining_dark_pixels} dark pixels, {remaining_edge_pixels} edge pixels")
+            # Check for remaining edges (skip in fast mode)
+            if not self.config.get('fast_mode', False) and not self.config.get('skip_quality_check', False):
+                final_edges = cv2.Canny(final_gray, 30, 90)
+                remaining_edge_pixels = np.sum(final_edges > 0)
+                self.logger.info(f"   📊 Final quality: {remaining_dark_pixels} dark pixels, {remaining_edge_pixels} edge pixels")
+            else:
+                remaining_edge_pixels = 0
             
             # Generate outputs
             base_name = os.path.splitext(filename)[0]

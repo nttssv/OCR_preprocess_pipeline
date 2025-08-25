@@ -66,6 +66,21 @@ PIPELINE_CONFIG = {
             }
         },
         
+        "task_3_cropping_standalone": {
+            "name": "Document Cropping (Standalone)",
+            "enabled": True,
+            "description": "Fast cropping without dependencies for production mode",
+            "order": 3,
+            "dependencies": [],  # No dependencies for standalone mode
+            "output_format": "png",
+            "settings": {
+                "margin": 5,  # Smaller margin for speed
+                "remove_holes": False,  # Skip for speed
+                "remove_edges": False,  # Skip for speed
+                "method": "basic"  # Fastest method
+            }
+        },
+        
         "task_4_size_dpi_standardization": {
             "name": "Size & DPI Standardization",
             "enabled": True,
@@ -540,6 +555,23 @@ EXECUTION_MODES = {
         "name": "Comprehensive Document Processing",
         "description": "Complete pipeline with all analysis and standardization features",
         "tasks": ["task_9_document_deduplication", "task_10_language_detection", "task_11_metadata_extraction", "task_1_orientation_correction", "task_2_skew_detection", "task_3_cropping", "task_4_size_dpi_standardization", "task_5_noise_reduction", "task_6_contrast_enhancement", "task_8_color_handling", "task_7_multipage_segmentation", "task_12_output_specifications"]
+    },
+    
+    "production_mode": {
+        "name": "Production Mode",
+        "description": "Ultra-fast pipeline with orientation correction, skew detection, and cropping in under 5 seconds",
+        "tasks": ["task_1_orientation_correction", "task_2_skew_detection", "task_3_cropping"],
+        "production_settings": {
+            "single_output_only": True,
+            "disable_comparisons": True,
+            "disable_intermediate_files": True,
+            "disable_color_archive": True,
+            "disable_metadata_extraction": True,
+            "final_format": "png",
+            "cleanup_temp_files": True,
+            "fast_processing": True,
+            "skip_validation": True
+        }
     }
 }
 

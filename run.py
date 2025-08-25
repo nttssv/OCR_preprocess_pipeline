@@ -34,6 +34,7 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from document_processing_pipeline import DocumentProcessingPipeline
 from pipeline_config import get_execution_mode, get_pipeline_config
 from document_specific_config import apply_document_config
+from document_specific_config_fast import apply_fast_document_config
 from utils.ingestion import (
     expand_inputs_with_pdfs,
     compute_page_hash,
@@ -47,14 +48,15 @@ class IntelligentDocumentProcessor:
     Main Document Processing Pipeline with Parallel Execution and Quality Optimization
     """
     
-    def __init__(self, input_folder="input", output_folder="output", temp_folder="temp", max_workers=None, pdf_dpi: int = 250, index_db_path: str = "ingestion/index.db", enable_comparisons: bool = True, allow_duplicates: bool = False):
+    def __init__(self, input_folder="input", output_folder="output", temp_folder="temp", max_workers=None, pdf_dpi: int = 250, index_db_path: str = "ingestion/index.db", enable_comparisons: bool = True, allow_duplicates: bool = False, production_mode: bool = False):
         self.input_folder = input_folder
         self.output_folder = output_folder
         self.temp_folder = temp_folder
         self.pdf_dpi = pdf_dpi
         self.index_db_path = index_db_path
-        self.enable_comparisons = enable_comparisons
+        self.enable_comparisons = enable_comparisons and not production_mode
         self.allow_duplicates = allow_duplicates
+        self.production_mode = production_mode
         
         # Determine optimal number of workers
         if max_workers is None:
@@ -64,7 +66,10 @@ class IntelligentDocumentProcessor:
             self.max_workers = max_workers
         
         print(f"🚀 Document Processing Pipeline initialized with {self.max_workers} workers")
-        print(f"✨ Quality optimization enabled (auto-fixes blur/gray issues)")
+        if self.production_mode:
+            print(f"🏭 Production mode: Single output file per page")
+        else:
+            print(f"✨ Quality optimization enabled (auto-fixes blur/gray issues)")
         
         # Create necessary folders
         self._create_folders()
@@ -181,8 +186,11 @@ class IntelligentDocumentProcessor:
             # Configure pipeline for the specified mode
             self._configure_pipeline_for_mode(pipeline, mode_name)
             
-            # 🔧 APPLY QUALITY FIXES - This prevents blur and gray backgrounds
-            apply_document_config(pipeline, filename)
+            # 🔧 APPLY CONFIGURATION - Quality fixes or fast processing
+            if mode_name == 'production_mode':
+                apply_fast_document_config(pipeline, filename)
+            else:
+                apply_document_config(pipeline, filename)
             
             # Process only this file
             start_time = time.time()
@@ -201,6 +209,10 @@ class IntelligentDocumentProcessor:
             mode_config = get_execution_mode(mode_name)
             enabled_tasks = mode_config['tasks']
             standalone_mode = mode_config.get('standalone_mode', False)
+            
+            # For production mode, don't force standalone mode since we need proper task chain
+            # if mode_name == 'production_mode':
+            #     standalone_mode = True
             
             # Run the task chain (PDFs are pre-converted to images, so file_type is 'image')
             result = task_manager.run_task_chain(enabled_tasks, file_path, 'image', file_temp_folder, standalone_mode)
@@ -347,6 +359,13 @@ class IntelligentDocumentProcessor:
                         'error': str(e),
                         'duration': 0
                     })
+        
+        total_time = time.time() - start_time
+        
+        # Generate summary
+        self._generate_summary(results, total_time, mode_name)
+        
+        return True
     
     def _handle_single_page_result(self, result, enabled_tasks, file_path, file_output_folder, filename):
         """Handle result generation for single-page documents"""
@@ -360,25 +379,28 @@ class IntelligentDocumentProcessor:
         
         if final_output and os.path.exists(final_output):
             import shutil
-            final_result_path = os.path.join(file_output_folder, f"{os.path.splitext(filename)[0]}_result.png")
-            shutil.copy2(final_output, final_result_path)
             
-            # Generate comparison image (original vs final result) if enabled
-            if self.enable_comparisons:
-                comparison_path = os.path.join(file_output_folder, f"{os.path.splitext(filename)[0]}_comparison.png")
-                if self.generate_comparison(file_path, final_result_path, comparison_path):
-                    print(f"📊 Generated comparison: {os.path.basename(comparison_path)}")
-            
-            return final_result_path
+            if self.production_mode:
+                # Production mode: Generate only 1 clean result file
+                base_name = os.path.splitext(filename)[0]
+                final_result_path = os.path.join(file_output_folder, f"{base_name}.png")
+                shutil.copy2(final_output, final_result_path)
+                print(f"📄 Production result: {base_name}.png")
+                return final_result_path
+            else:
+                # Standard mode: Generate result with suffix
+                final_result_path = os.path.join(file_output_folder, f"{os.path.splitext(filename)[0]}_result.png")
+                shutil.copy2(final_output, final_result_path)
+                
+                # Generate comparison image (original vs final result) if enabled
+                if self.enable_comparisons:
+                    comparison_path = os.path.join(file_output_folder, f"{os.path.splitext(filename)[0]}_comparison.png")
+                    if self.generate_comparison(file_path, final_result_path, comparison_path):
+                        print(f"📊 Generated comparison: {os.path.basename(comparison_path)}")
+                
+                return final_result_path
         
         return None
-        
-        total_time = time.time() - start_time
-        
-        # Generate summary
-        self._generate_summary(results, total_time, mode_name)
-        
-        return True
     
     def _generate_summary(self, results, total_time, mode_name):
         """Generate processing summary"""
@@ -437,7 +459,7 @@ Quality Features:
     
     parser.add_argument(
         '--mode', 
-        choices=['full_pipeline', 'skew_only', 'crop_only', 'orient_only', 'skew_and_crop', 'crop_and_orient', 'with_dpi_standardization', 'noise_only', 'with_denoising', 'contrast_only', 'with_enhancement', 'segmentation_only', 'with_segmentation', 'color_handling_only', 'with_color_handling', 'deduplication_only', 'with_deduplication', 'language_detection_only', 'metadata_extraction_only', 'output_standardization_only', 'comprehensive_pipeline'],
+        choices=['full_pipeline', 'skew_only', 'crop_only', 'orient_only', 'skew_and_crop', 'crop_and_orient', 'with_dpi_standardization', 'noise_only', 'with_denoising', 'contrast_only', 'with_enhancement', 'segmentation_only', 'with_segmentation', 'color_handling_only', 'with_color_handling', 'deduplication_only', 'with_deduplication', 'language_detection_only', 'metadata_extraction_only', 'output_standardization_only', 'comprehensive_pipeline', 'production_mode'],
         default='full_pipeline',
         help='Pipeline execution mode (default: full_pipeline)'
     )
@@ -532,7 +554,8 @@ Quality Features:
             pdf_dpi=args.pdf_dpi,
             index_db_path=args.index_db,
             enable_comparisons=not args.no_comparisons,
-            allow_duplicates=args.allow_duplicates
+            allow_duplicates=args.allow_duplicates,
+            production_mode=(args.mode == 'production_mode')
         )
         
         success = processor.run(args.mode)
