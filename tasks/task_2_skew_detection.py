@@ -368,7 +368,7 @@ class SkewDetectionTask:
         
         # OPTIMIZATION 1: Simplified decision tree
         # If projection found a clear angle, use it (most reliable)
-        if abs(proj_angle) > 0.5:
+        if abs(proj_angle) > 3.0:  # Increased threshold from 0.5° to 3.0° for more conservative detection
             # Quick support check
             hough_support = abs(hough_angle - proj_angle) < 2.0
             text_support = abs(text_angle - proj_angle) < 2.0
@@ -378,11 +378,11 @@ class SkewDetectionTask:
                 return proj_angle
         
         # OPTIMIZATION 2: Fast fallback to best available method
-        if hough_conf > 5 and abs(hough_angle) > 0.5:
+        if hough_conf > 5 and abs(hough_angle) > 3.0:  # Increased threshold from 0.5° to 3.0°
             self.logger.info(f"      ✅ Using Hough angle {hough_angle:.2f}°")
             return hough_angle
         
-        if text_conf > 3 and abs(text_angle) > 0.5:
+        if text_conf > 3 and abs(text_angle) > 3.0:  # Increased threshold from 0.5° to 3.0°
             self.logger.info(f"      ✅ Using text line angle {text_angle:.2f}°")
             return text_angle
         
@@ -390,7 +390,7 @@ class SkewDetectionTask:
         angles = []
         weights = []
         
-        if abs(proj_angle) > 0.1:
+        if abs(proj_angle) > 3.0:  # Increased threshold from 0.1° to 3.0°
             angles.append(proj_angle)
             weights.append(3.0)
         
@@ -440,7 +440,7 @@ class SkewDetectionTask:
     
     def _deskew_image(self, image_bgr, angle_deg):
         """Deskew image by the detected angle"""
-        if abs(angle_deg) < 2.0:  # No need to deskew if angle is very small (increased threshold)
+        if abs(angle_deg) < 3.0:  # No need to deskew if angle is very small (increased threshold from 2.0° to 3.0°)
             return image_bgr
         
         height, width = image_bgr.shape[:2]
