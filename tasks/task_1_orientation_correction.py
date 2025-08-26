@@ -830,12 +830,12 @@ class OrientationCorrectionTask:
             return 'mixed_content'
     
     def _smart_consensus_with_features(self, orientations, features, filename):
-        """Smart consensus that selects the best method based purely on image features (filename-blind)"""
+        """ULTRA-CONSERVATIVE consensus that defaults to 0° unless absolutely certain of rotation"""
         
         # orientations = [text_structure, character_patterns, reading_direction, zebra_stripes]
         method_names = ['text_structure', 'character_patterns', 'reading_direction', 'zebra_stripes']
         
-        self.logger.info(f"   🧠 Smart consensus for {filename} ({features['document_type']})")
+        self.logger.info(f"   🧠 ULTRA-CONSERVATIVE consensus for {filename} ({features['document_type']})")
         self.logger.info(f"   📊 Methods: {dict(zip(method_names, orientations))}")
         self.logger.info(f"   📈 Reading reliability: {features['reading_reliability']:.3f}")
         
@@ -844,144 +844,19 @@ class OrientationCorrectionTask:
         most_common = orientation_counts.most_common(1)[0][0]
         max_count = orientation_counts[most_common]
         
-        # NEW RULE 0: High reading direction reliability override (with conflict check)
-        if features['reading_reliability'] > 0.9:  # Increased threshold for automatic trust
-            reading_direction_result = orientations[2]  # reading_direction method
-            # Check if reading_direction conflicts with 2+ other methods
-            reading_conflicts = sum(1 for o in orientations[:2] + orientations[3:] if o != reading_direction_result)
-            
-            # CONSERVATIVE CHECK: If other methods suggest 0° (no rotation), be very cautious
-            zero_degree_methods = sum(1 for o in orientations[:2] + orientations[3:] if o == 0)
-            if reading_direction_result != 0 and zero_degree_methods >= 2:
-                self.logger.info(f"   ⚠️  Reading direction suggests {reading_direction_result}° but {zero_degree_methods} methods suggest 0° (no rotation) → staying conservative at 0°")
-                return 0
-            
-            # INTELLIGENT CHECK: Distinguish between genuine rotation needs vs false positives
-            # This handles cases where the image appears rotated to algorithms but is actually correct
-            rotation_consensus = max(sum(1 for o in orientations if o == angle) for angle in [0, 90, 180, 270])
-            
-            # ENHANCED VALIDATION: Additional checks for potential false positives
-            rotation_consensus_count = sum(1 for o in orientations if o == reading_direction_result)
-            
-            # Conservative check for mixed_content documents (like stamps/signatures)
-            if (reading_direction_result != 0 and features['document_type'] == 'mixed_content' and 
-                rotation_consensus_count >= 3 and features['reading_reliability'] > 0.95):
-                self.logger.info(f"   ⚠️  Strong {reading_direction_result}° consensus on mixed_content document with high reliability ({features['reading_reliability']:.3f})")
-                self.logger.info(f"   🔍  This might be a false positive for stamps/signatures/mixed content")
-                self.logger.info(f"   🛡️  Being conservative - staying at 0° to preserve original orientation")
-                self.logger.info(f"   💡 If the document is actually rotated, please manually rotate it before processing")
-                return 0
-            
-            if reading_conflicts >= 2:
-                self.logger.info(f"   ⚠️  High reading reliability ({features['reading_reliability']:.3f}) but conflicts with {reading_conflicts} methods → proceeding to consensus")
-            else:
-                self.logger.info(f"   🎯 Very high reading reliability ({features['reading_reliability']:.3f}) → using reading_direction: {reading_direction_result}°")
-                return reading_direction_result
-        
-        # RULE 1: Strong consensus (3+ methods agree) - but check for reading direction override
-        if max_count >= 3:
-            # Special case: if reading direction says 0° with high reliability, be very cautious about rotating
-            if orientations[2] == 0 and features['reading_reliability'] > 0.95 and most_common != 0:
-                self.logger.info(f"   ⚠️  Strong consensus for {most_common}° but reading_direction (0°) has very high reliability ({features['reading_reliability']:.3f}) → staying at 0°")
-                return 0
-            
-            # ENHANCED VALIDATION: Conservative check for large scanned documents
-            if (most_common != 0 and features['document_type'] == 'scanned_document' and 
-                features['is_large'] and max_count >= 2):
-                zero_methods = sum(1 for o in orientations if o == 0)
-                if zero_methods >= 1:  # At least one method suggests 0°
-                    self.logger.info(f"   ⚠️  Strong {most_common}° consensus on large scanned_document but {zero_methods} method(s) suggest 0°")
-                    self.logger.info(f"   🔍  Large scanned documents often have false positive rotations due to complex layouts")
-                    self.logger.info(f"   🛡️  Being conservative - staying at 0° to preserve original orientation")
-                    self.logger.info(f"   💡 If the document is actually rotated, please manually rotate it before processing")
-                    return 0
-            
-            self.logger.info(f"   🎯 Strong consensus: {most_common}° ({max_count}/4 methods agree)")
+        # ULTRA-CONSERVATIVE RULE: NEVER rotate unless 4/4 methods agree on the same non-zero angle
+        # This is the most conservative approach - only allow rotation with perfect consensus
+        if max_count == 4 and most_common != 0:
+            self.logger.info(f"   🎯 PERFECT consensus: {most_common}° (4/4 methods agree) - allowing rotation")
             return most_common
         
-        # RULE 2: Moderate consensus (2 methods agree) - check method reliability
-        elif max_count >= 2:
-            # Check which 2 methods agree and prioritize reliable combinations
-            agreeing_methods = []
-            for i, orientation in enumerate(orientations):
-                if orientation == most_common:
-                    agreeing_methods.append(method_names[i])
-            
-            self.logger.info(f"   🎯 Moderate consensus: {most_common}° (methods: {agreeing_methods})")
-            
-            # ENHANCED VALIDATION: Conservative check for dense_text and large scanned documents
-            if most_common != 0:
-                zero_methods = sum(1 for o in orientations if o == 0)
-                
-                # Conservative for large scanned documents
-                if (features['document_type'] == 'scanned_document' and features['is_large'] and zero_methods >= 1):
-                    self.logger.info(f"   ⚠️  Moderate {most_common}° consensus on large scanned_document but {zero_methods} method(s) suggest 0°")
-                    self.logger.info(f"   🔍  Large scanned documents often have false positive rotations due to complex layouts")
-                    self.logger.info(f"   🛡️  Being conservative - staying at 0° to preserve original orientation")
-                    self.logger.info(f"   💡 If the document is actually rotated, please manually rotate it before processing")
-                    return 0
-                
-                # Conservative for dense_text documents with conflicting methods
-                if (features['document_type'] == 'dense_text' and zero_methods >= 1 and 
-                    features['reading_reliability'] > 0.95):
-                    self.logger.info(f"   ⚠️  Moderate {most_common}° consensus on dense_text document but {zero_methods} method(s) suggest 0°")
-                    self.logger.info(f"   🔍  Dense text documents with high reading reliability often have false positive rotations")
-                    self.logger.info(f"   🛡️  Being conservative - staying at 0° to preserve original orientation")
-                    self.logger.info(f"   💡 If the document is actually rotated, please manually rotate it before processing")
-                    return 0
-            
-            # Prioritize certain method combinations based on reliability
-            if 'text_structure' in agreeing_methods and 'reading_direction' in agreeing_methods:
-                self.logger.info(f"   ✅ Reliable combination: text_structure + reading_direction")
-                return most_common
-            elif 'character_patterns' in agreeing_methods and 'reading_direction' in agreeing_methods:
-                self.logger.info(f"   ✅ Reliable combination: character_patterns + reading_direction")
-                return most_common
-            elif 'text_structure' in agreeing_methods and 'character_patterns' in agreeing_methods:
-                self.logger.info(f"   ✅ Reliable combination: text_structure + character_patterns")
-                return most_common
-            else:
-                self.logger.info(f"   ⚠️  Moderate consensus accepted")
-                return most_common
-        
-        # RULE 3: No clear consensus - use feature-based method selection
+        # For ALL other cases, stay at 0° (no rotation)
+        if most_common != 0:
+            self.logger.info(f"   🛡️  ULTRA-CONSERVATIVE: {max_count}/4 methods suggest {most_common}° but not perfect consensus → staying at 0°")
         else:
-            self.logger.info(f"   🔍 No consensus, using feature-based method selection")
-            
-            # Check if reading_direction has medium+ reliability in conflict situations (more conservative)
-            if features['reading_reliability'] > 0.75 and orientations[2] == 0:  # Only trust reading_direction for "no rotation" when highly reliable
-                self.logger.info(f"   🛡️  High reading reliability ({features['reading_reliability']:.3f}) for no-rotation: Using reading_direction method")
-                return orientations[2]  # reading_direction
-            
-            # For large scanned documents, trust reading_direction
-            elif features['document_type'] == 'scanned_document':
-                self.logger.info(f"   🛡️  Scanned document: Using reading_direction method")
-                return orientations[2]  # reading_direction
-            
-            # For documents with clear text structure, trust text_structure
-            elif features['has_clear_lines'] and features['has_many_components']:
-                self.logger.info(f"   🛡️  Clear text structure: Using text_structure method")
-                return orientations[0]  # text_structure
-            
-            # For dense content, trust character_patterns
-            elif features['is_text_heavy'] and features['has_many_components']:
-                self.logger.info(f"   🛡️  Dense text content: Using character_patterns method")
-                return orientations[1]  # character_patterns
-            
-            # For documents with good line structure, trust reading_direction
-            elif features['has_clear_lines']:
-                self.logger.info(f"   🛡️  Good line structure: Using reading_direction method")
-                return orientations[2]  # reading_direction
-            
-            # Default: trust reading_direction for most documents (it's generally most reliable)
-            elif features['reading_reliability'] > 0.4:
-                self.logger.info(f"   🛡️  Default to reading_direction (reliability: {features['reading_reliability']:.3f})")
-                return orientations[2]  # reading_direction
-            
-            # Last resort: no rotation if reading_direction also seems unreliable
-            else:
-                self.logger.info(f"   🛡️  Conservative fallback: No rotation (low reading reliability: {features['reading_reliability']:.3f})")
-                return 0
+            self.logger.info(f"   🛡️  ULTRA-CONSERVATIVE: No clear consensus → defaulting to 0° (no rotation)")
+        
+        return 0
     
     def _fast_reading_score(self, binary_image):
         """Calculate reading direction score (original fast algorithm)"""

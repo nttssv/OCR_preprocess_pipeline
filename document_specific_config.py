@@ -61,22 +61,41 @@ MODERATE_SHARPENING_CONFIG = {
         "background_multiplier": 1.0            # No background boost
     },
     
-    # Task 8: Color Handling - Enhanced color preservation with brightness preservation
+    # Task 8: Color Handling - Ultra-sensitive red detection for small stamps/signatures
     "task_8_color_handling": {
         "enable_color_detection": True,
-        "stamp_color_threshold": 15,            # Lower threshold = detect more stamps
-        "signature_color_threshold": 10,        # Lower threshold = detect more signatures
-        "color_saturation_threshold": 25,       # Lower threshold = detect lighter colors
-        "color_value_threshold": 30,            # Lower threshold = detect darker colors
+        "stamp_color_threshold": 2,              # Extremely low threshold to detect very faint stamps
+        "signature_color_threshold": 2,          # Extremely low threshold to detect very faint signatures
+        "color_saturation_threshold": 5,         # Very low saturation threshold
+        "color_value_threshold": 10,             # Very low value threshold
         "preserve_stamp_colors": True,
         "preserve_signature_colors": True,
-        "color_region_expansion": 15,           # Expand region more to capture edges
-        "minimum_region_size": 200,             # Smaller minimum = detect more regions
-        "red_detection_enhanced": True,         # Enhanced red detection for stamps
-        "blue_detection_enhanced": True,        # Enhanced blue detection for signatures
+        "color_region_expansion": 30,            # Expand region more to capture full stamps/signatures
+        "minimum_region_size": 5,                # Tiny minimum size to catch very small red regions
+        "red_detection_enhanced": True,         
+        "blue_detection_enhanced": True,        
         "preserve_text_contrast": True,
-        "contrast_enhancement_factor": 1.0,     # No darkening - preserve brightness
-        "gamma_correction": 1.0                 # No gamma correction to prevent darkening
+        "contrast_enhancement_factor": 1.0,     
+        "gamma_correction": 1.0,                
+        # Extremely broad red hue range (0-30 and 150-180)
+        "red_hue_range_low": 0,                 
+        "red_hue_range_high": 30,
+        "red_saturation_min": 5,                # Extremely low minimum saturation
+        "red_value_min": 10,                    # Extremely low minimum value
+        "stamp_color_boost": 2.0,               # Very strong boost to stamp color intensity
+        "signature_color_boost": 2.0,           # Very strong boost to signature color
+        "enable_adaptive_thresholds": True,     
+        "min_contour_area": 1,                  # Absolute minimum contour area (1 pixel)
+        "max_aspect_ratio": 20.0,               # Allow very wide aspect ratios
+        "min_aspect_ratio": 0.05,               # Allow very tall aspect ratios
+        "color_boost_amount": 1.5,              # Stronger color boost for detected regions
+        "edge_preservation": True,              
+        "blur_radius": 0,                       # No blur to preserve very small details
+        "min_red_region_size": 5,               # Minimum size for red regions to be considered
+        "max_red_region_size": 10000,           # Very large maximum size to not miss anything
+        "red_intensity_boost": 1.8,             # Boost red channel intensity
+        "saturation_boost": 1.5,                # Boost saturation of detected reds
+        "value_boost": 1.3                      # Boost value (brightness) of detected reds
     }
 }
 
@@ -196,12 +215,12 @@ WHITE_BACKGROUND_CONFIG = {
         "enable_sharpening": False,             # Disable sharpening (can cause halos)
         "sharpening_strength": 0.0,
         "enable_brightness_adjustment": True,
-        "target_brightness": 252,               # Very bright white background
-        "brightness_tolerance": 5,              # Tighter tolerance
+        "target_brightness": 255,               # Pure white background
+        "brightness_tolerance": 1,              # Extremely tight tolerance
         "enhancement_mode": 'aggressive_white_preservation', # Super aggressive white
         "force_white_background": True,         # Force pure white backgrounds
-        "white_threshold": 220,                 # Lower threshold = more pixels considered white
-        "background_multiplier": 1.15           # Boost background brightness by 15%
+        "white_threshold": 160,                 # Much lower threshold = more pixels considered white
+        "background_multiplier": 1.5            # Boost background brightness by 50%
     },
     
     # Task 8: Color Handling - Enhanced color preservation for stamps/signatures
@@ -261,7 +280,8 @@ def get_document_config(filename):
     """Get appropriate configuration based on filename or document characteristics"""
     
     # Special handling for file 4 - apply MODERATE sharpening (prevents artifacts)
-    if "4.png" in filename or "4_" in filename:
+    # Only match exact "4.png" or "4_" patterns, not "page_0014.png"
+    if filename == "4.png" or filename.startswith("4_"):
         print(f"   🔧 File 4 detected: Applying MODERATE_SHARPENING_CONFIG to prevent artifacts")
         return MODERATE_SHARPENING_CONFIG
     

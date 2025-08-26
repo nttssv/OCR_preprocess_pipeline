@@ -440,7 +440,8 @@ EXECUTION_MODES = {
     "skew_only": {
         "name": "Skew Detection Only",
         "description": "Only run skew detection and correction",
-        "tasks": ["task_2_skew_detection"]
+        "tasks": ["task_2_skew_detection"],
+        "standalone_mode": True  # Allow task to run without dependencies
     },
     
     "crop_only": {
@@ -482,7 +483,8 @@ EXECUTION_MODES = {
     "contrast_only": {
         "name": "Contrast Enhancement Only",
         "description": "Only run contrast and brightness enhancement",
-        "tasks": ["task_6_contrast_enhancement"]
+        "tasks": ["task_6_contrast_enhancement"],
+        "standalone_mode": True  # Allow task to run without dependencies
     },
     
     "with_enhancement": {

@@ -7,14 +7,16 @@ Ultra-optimized settings for speed (under 5 seconds processing)
 
 # Ultra-fast configuration for production mode
 ULTRA_FAST_CONFIG = {
-    # Task 1: Orientation Correction - Fastest detection
+    # Task 1: Orientation Correction - Balanced speed and accuracy
     "task_1_orientation_correction": {
-        "confidence_threshold": 0.5,  # Even lower threshold for speed
+        "confidence_threshold": 0.8,  # Higher threshold for better accuracy
         "fast_mode": True,
-        "skip_validation": True,
-        "method": "fast",
-        "max_resolution": 1000,  # Limit resolution for speed
-        "skip_quality_check": True
+        "skip_validation": False,  # Enable validation for better decisions
+        "method": "balanced",  # Use balanced method instead of fastest
+        "max_resolution": 1500,  # Increase resolution for better detection
+        "skip_quality_check": False,  # Enable quality check
+        "consensus_weight_adjustment": True,  # Better consensus logic
+        "prefer_text_structure": True  # Prioritize text structure analysis
     },
     
     # Task 2: Skew Detection - Fastest correction

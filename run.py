@@ -42,6 +42,8 @@ from utils.ingestion import (
     record_document,
     compute_document_id,
 )
+from utils.file_integrity import FileIntegrityChecker
+from utils.file_locker import FileLocker
 
 class IntelligentDocumentProcessor:
     """
@@ -58,10 +60,10 @@ class IntelligentDocumentProcessor:
         self.allow_duplicates = allow_duplicates
         self.production_mode = production_mode
         
-        # Determine optimal number of workers
+        # Determine optimal number of workers - REDUCED FOR STABILITY
         if max_workers is None:
             cpu_count = mp.cpu_count()
-            self.max_workers = min(cpu_count, 8)  # Cap at 8 for stability
+            self.max_workers = min(cpu_count, 2)  # Cap at 2 to prevent race conditions
         else:
             self.max_workers = max_workers
         
@@ -73,6 +75,10 @@ class IntelligentDocumentProcessor:
         
         # Create necessary folders
         self._create_folders()
+        
+        # Initialize file integrity and locking systems
+        self.file_integrity_checker = FileIntegrityChecker()
+        self.file_locker = FileLocker()
     
     def _create_folders(self):
         """Create necessary folders for the pipeline"""
@@ -106,19 +112,57 @@ class IntelligentDocumentProcessor:
         if skipped:
             print(f"⚠️  Skipped {len(skipped)} duplicate pages (already seen)")
 
+        # Register all input files for integrity monitoring
+        print("🔒 Registering files for integrity monitoring...")
+        for _, file_path in images_to_process:
+            if os.path.exists(file_path):
+                self.file_integrity_checker.register_file(file_path)
+        
         print(f"📁 Prepared {len(images_to_process)} page images for processing")
         return images_to_process
     
-    def generate_comparison(self, original_path, processed_path, output_path):
+    def generate_comparison(self, original_path, processed_path, output_path, is_blank=False):
         """Generate side-by-side comparison of original vs processed image"""
         try:
-            # Read images
+            # Read original image
             original = cv2.imread(original_path)
-            processed = cv2.imread(processed_path)
-            
-            if original is None or processed is None:
-                print(f"❌ Could not read images for comparison: {original_path} or {processed_path}")
+            if original is None:
+                print(f"❌ Could not read original image for comparison: {original_path}")
                 return False
+            
+            # Handle blank page case
+            if is_blank:
+                # Create a blank page indicator image
+                height, width = original.shape[:2]
+                blank_indicator = np.ones((height, width, 3), dtype=np.uint8) * 255
+                
+                # Add "BLANK PAGE" text overlay
+                font = cv2.FONT_HERSHEY_SIMPLEX
+                font_scale = 3.0
+                thickness = 4
+                text = "BLANK PAGE"
+                
+                # Get text size
+                (text_width, text_height), baseline = cv2.getTextSize(text, font, font_scale, thickness)
+                
+                # Center the text
+                text_x = (width - text_width) // 2
+                text_y = (height + text_height) // 2
+                
+                # Add semi-transparent background
+                cv2.rectangle(blank_indicator, (text_x - 30, text_y - text_height - 30), 
+                             (text_x + text_width + 30, text_y + 30), (200, 200, 200), -1)
+                
+                # Add text
+                cv2.putText(blank_indicator, text, (text_x, text_y), font, font_scale, (255, 0, 0), thickness)
+                
+                processed = blank_indicator
+            else:
+                # Read processed image for normal comparison
+                processed = cv2.imread(processed_path)
+                if processed is None:
+                    print(f"❌ Could not read processed image for comparison: {processed_path}")
+                    return False
             
             # Get dimensions
             orig_h, orig_w = original.shape[:2]
@@ -168,6 +212,27 @@ class IntelligentDocumentProcessor:
         try:
             print(f"🔄 Processing {filename} in worker {os.getpid()}")
             
+            # Check file integrity before processing
+            with self.file_locker.file_lock(file_path):
+                is_valid, message = self.file_integrity_checker.verify_file_integrity(file_path)
+                if not is_valid:
+                    print(f"❌ File integrity check failed for {filename}: {message}")
+                    return {
+                        'filename': filename,
+                        'status': 'failed',
+                        'error': f'File integrity check failed: {message}',
+                        'duration': 0
+                    }
+                print(f"✅ File integrity verified for {filename}")
+                
+                # Create backup before processing
+                backup_dir = os.path.join(self.temp_folder, 'backups')
+                os.makedirs(backup_dir, exist_ok=True)
+                backup_path = os.path.join(backup_dir, os.path.basename(file_path))
+                import shutil
+                shutil.copy2(file_path, backup_path)
+                print(f"💾 Created backup: {os.path.basename(backup_path)}")
+            
             # Create unique temp folder for this file to avoid conflicts
             file_temp_folder = os.path.join(self.temp_folder, f"worker_{os.getpid()}_{filename}")
             os.makedirs(file_temp_folder, exist_ok=True)
@@ -175,6 +240,31 @@ class IntelligentDocumentProcessor:
             # Create unique output folder for this file
             file_output_folder = os.path.join(self.output_folder, f"processed_{filename}")
             os.makedirs(file_output_folder, exist_ok=True)
+            
+            # 🔍 EARLY BLANK PAGE DETECTION - Skip processing if page is blank
+            from utils.blank_page_detection import BlankPageDetector
+            blank_detector = BlankPageDetector()
+            blank_result = blank_detector.is_blank_page(file_path)
+            
+            if blank_result['is_blank']:
+                print(f"📄 {filename}: BLANK PAGE DETECTED - Skipping processing")
+                # Create blank page result
+                blank_output = blank_detector.create_blank_page_result(file_path, file_output_folder)
+                
+                # Generate comparison for blank page
+                if self.enable_comparisons:
+                    comparison_path = os.path.join(file_output_folder, f"{filename}_comparison.png")
+                    if self.generate_comparison(file_path, None, comparison_path, is_blank=True):
+                        print(f"📊 Generated blank page comparison: {os.path.basename(comparison_path)}")
+                
+                return {
+                    'filename': filename,
+                    'status': 'blank_page',
+                    'result': blank_output,
+                    'duration': 0,
+                    'output_folder': file_output_folder,
+                    'blank_detection': blank_result
+                }
             
             # Initialize pipeline for this file
             pipeline = DocumentProcessingPipeline(
@@ -276,6 +366,14 @@ class IntelligentDocumentProcessor:
             except Exception:
                 pass
             
+            # Check file integrity after processing
+            with self.file_locker.file_lock(file_path):
+                is_valid, message = self.file_integrity_checker.verify_file_integrity(file_path)
+                if not is_valid:
+                    print(f"⚠️  File integrity compromised after processing {filename}: {message}")
+                    # Continue with result but flag the issue
+                    result['integrity_warning'] = message
+            
             return {
                 'filename': filename,
                 'status': 'completed',
@@ -286,6 +384,24 @@ class IntelligentDocumentProcessor:
             
         except Exception as e:
             print(f"❌ Error processing {filename}: {str(e)}")
+            
+            # Check if file was corrupted during processing
+            try:
+                with self.file_locker.file_lock(file_path):
+                    is_valid, message = self.file_integrity_checker.verify_file_integrity(file_path)
+                    if not is_valid:
+                        print(f"⚠️  File {filename} was corrupted during processing: {message}")
+                        # Try to restore from backup if available
+                        backup_path = os.path.join(self.temp_folder, 'backups', os.path.basename(file_path))
+                        if os.path.exists(backup_path):
+                            print(f"🔄 Attempting to restore {filename} from backup...")
+                            if self.file_integrity_checker.restore_file_from_backup(file_path, backup_path):
+                                print(f"✅ Successfully restored {filename} from backup")
+                            else:
+                                print(f"❌ Failed to restore {filename} from backup")
+            except Exception as recovery_error:
+                print(f"⚠️  Error during file recovery: {recovery_error}")
+            
             return {
                 'filename': filename,
                 'status': 'failed',
@@ -362,6 +478,18 @@ class IntelligentDocumentProcessor:
         
         total_time = time.time() - start_time
         
+        # Final file integrity check
+        print("\n🔒 Performing final file integrity check...")
+        integrity_results = self.file_integrity_checker.verify_all_files()
+        corrupted_files = self.file_integrity_checker.get_corrupted_files()
+        
+        if corrupted_files:
+            print(f"⚠️  Found {len(corrupted_files)} corrupted files:")
+            for file_path in corrupted_files:
+                print(f"   - {os.path.basename(file_path)}")
+        else:
+            print("✅ All files maintain integrity")
+        
         # Generate summary
         self._generate_summary(results, total_time, mode_name)
         
@@ -407,6 +535,7 @@ class IntelligentDocumentProcessor:
         
         successful = [r for r in results if r['status'] == 'completed']
         failed = [r for r in results if r['status'] == 'failed']
+        blank_pages = [r for r in results if r['status'] == 'blank_page']
         
         print("\n" + "="*60)
         print("📊 PROCESSING SUMMARY")
@@ -415,6 +544,7 @@ class IntelligentDocumentProcessor:
         print(f"👥 Workers: {self.max_workers}")
         print(f"📄 Total files: {len(results)}")
         print(f"✅ Successful: {len(successful)}")
+        print(f"📄 Blank pages: {len(blank_pages)}")
         print(f"❌ Failed: {len(failed)}")
         print(f"⏱️  Total time: {total_time:.2f} seconds")
         
@@ -427,6 +557,13 @@ class IntelligentDocumentProcessor:
             speedup = total_processing_time / total_time if total_time > 0 else 1
             print(f"🚀 Speedup factor: {speedup:.2f}x")
         
+        if blank_pages:
+            print(f"\n📄 Blank pages detected:")
+            for result in blank_pages:
+                blank_info = result.get('blank_detection', {})
+                reason = blank_info.get('reason', 'Unknown')
+                print(f"   - {result['filename']}: {reason}")
+        
         if failed:
             print(f"\n❌ Failed files:")
             for result in failed:
@@ -435,6 +572,8 @@ class IntelligentDocumentProcessor:
         print(f"\n📁 Results saved in: {self.output_folder}")
         print("🎉 Processing completed!")
         print("✨ Quality fixes automatically applied where needed!")
+        if blank_pages:
+            print("📄 Blank pages skipped to save processing time!")
 
 def main():
     """Main function to run the document processing pipeline"""
@@ -467,8 +606,8 @@ Quality Features:
     parser.add_argument(
         '--workers', 
         type=int,
-        default=None,
-        help='Number of parallel workers (default: auto-detect based on CPU cores)'
+        default=2,  # Default to 2 workers for stability
+        help='Number of parallel workers (default: 2 for stability, max: 4)'
     )
     
     parser.add_argument(
@@ -515,6 +654,14 @@ Quality Features:
     )
 
     args = parser.parse_args()
+    
+    # Validate workers argument
+    if args.workers is not None:
+        if args.workers < 1 or args.workers > 4:
+            print(f"❌ Invalid number of workers: {args.workers}")
+            print(f"   Workers must be between 1 and 4 for stability")
+            return
+        print(f"🔒 Using {args.workers} workers for stability")
     
     # Validate input folder
     if not os.path.exists(args.input):

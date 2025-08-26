@@ -505,17 +505,9 @@ class ContrastEnhancementTask:
         # Gentle contrast boost without over-enhancement
         if image_stats.get('contrast_ratio', 1.0) < 3.0:  # Only if low contrast
             self.logger.info(f"     🔧 Applying gentle contrast boost")
-            # Convert to LAB for better contrast enhancement
-            lab = cv2.cvtColor(enhanced, cv2.COLOR_BGR2LAB)
-            l, a, b = cv2.split(lab)
-            
-            # Apply very gentle CLAHE
+            # enhanced is already grayscale, so just apply CLAHE directly
             clahe = cv2.createCLAHE(clipLimit=1.2, tileGridSize=(8, 8))
-            l_enhanced = clahe.apply(l)
-            
-            # Merge back
-            enhanced_lab = cv2.merge([l_enhanced, a, b])
-            enhanced = cv2.cvtColor(enhanced_lab, cv2.COLOR_LAB2BGR)
+            enhanced = clahe.apply(enhanced)
         
         return np.clip(enhanced, 0, 255).astype(np.uint8)
     
@@ -568,7 +560,8 @@ class ContrastEnhancementTask:
         background_mask = image >= white_threshold
         
         # Also include pixels that are reasonably bright (potential gray backgrounds)
-        gray_background_mask = (image >= 200) & (image < white_threshold)
+        # Much more aggressive - include darker pixels that might be backgrounds
+        gray_background_mask = (image >= 150) & (image < white_threshold)
         
         # Apply background enhancement
         enhanced = image.copy().astype(np.float32)
@@ -586,6 +579,16 @@ class ContrastEnhancementTask:
                 enhanced[gray_background_mask] * background_multiplier, 0, 255
             )
             self.logger.info(f"     🔧 Enhanced {np.sum(gray_background_mask)} gray background pixels (×{background_multiplier:.2f})")
+            
+            # Force very bright gray areas to pure white
+            very_bright_gray = (image >= 180) & (image < white_threshold)
+            enhanced[very_bright_gray] = 255
+            self.logger.info(f"     🔧 Forced {np.sum(very_bright_gray)} bright gray pixels to pure white")
+            
+            # Force moderately bright areas to pure white (more aggressive)
+            moderately_bright = (image >= 160) & (image < 180)
+            enhanced[moderately_bright] = 255
+            self.logger.info(f"     🔧 Forced {np.sum(moderately_bright)} moderately bright pixels to pure white")
         
         # Additional aggressive white preservation for document backgrounds
         if self.config.get('enhancement_mode') == 'aggressive_white_preservation':
@@ -598,8 +601,8 @@ class ContrastEnhancementTask:
             variance = cv2.filter2D((image.astype(np.float32) - local_mean) ** 2, -1, kernel)
             
             # Low variance + high brightness = likely background
-            low_variance_mask = variance < 100  # Low local variance
-            bright_mask = image > 180  # Reasonably bright
+            low_variance_mask = variance < 150  # Higher variance threshold
+            bright_mask = image > 150  # Much lower brightness threshold
             aggressive_bg_mask = low_variance_mask & bright_mask
             
             # Force these areas to pure white
@@ -643,8 +646,8 @@ class ContrastEnhancementTask:
             
             # Add statistics
             original_brightness = image_stats['mean_brightness']
-            enhanced_gray = cv2.cvtColor(enhanced, cv2.COLOR_BGR2GRAY) if len(enhanced.shape) == 3 else enhanced
-            enhanced_brightness = np.mean(enhanced_gray)
+            # enhanced is already grayscale, so just use it directly
+            enhanced_brightness = np.mean(enhanced)
             
             stats_text = f"Brightness: {original_brightness:.0f} -> {enhanced_brightness:.0f} | Contrast Ratio: {image_stats['contrast_ratio']:.2f}"
             cv2.putText(comparison, stats_text, (30, info_y + 25), font, 0.6, (100, 0, 0), 1)

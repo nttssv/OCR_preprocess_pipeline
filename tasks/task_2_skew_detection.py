@@ -440,7 +440,7 @@ class SkewDetectionTask:
     
     def _deskew_image(self, image_bgr, angle_deg):
         """Deskew image by the detected angle"""
-        if abs(angle_deg) < 0.1:  # No need to deskew if angle is very small
+        if abs(angle_deg) < 2.0:  # No need to deskew if angle is very small (increased threshold)
             return image_bgr
         
         height, width = image_bgr.shape[:2]
