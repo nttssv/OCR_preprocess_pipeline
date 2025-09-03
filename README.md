@@ -2,7 +2,20 @@
 
 🚀 **Intelligent parallel document processing with automatic quality optimization and brightness preservation**
 
-**Version: 0.1.10** - Enhanced Performance & Quality Optimization
+**Pipeline Version: 0.1.10** - Enhanced Performance & Quality Optimization  
+**API Version: 0.1.11** - REST API with Multi-page PDF Support & Docker Deployment
+
+## 🌌 Overview
+
+**Choose Your Interface:**
+- **💻 Command Line**: Use [`run.py`](run.py) for batch processing and automation
+- **🌐 REST API**: Use [`start_api.py`](start_api.py) for web integration and remote processing
+
+**Key Capabilities:**
+- **Multi-page PDF Processing**: Converts all PDF pages to individual PNG files
+- **Intelligent Transformations**: 4 processing modes (basic, deskewing, enhanced, comprehensive)
+- **Real-time Status Tracking**: Monitor processing progress via API endpoints
+- **Production Ready**: Docker support, caching, performance optimization
 
 ## 🌟 Features
 
@@ -170,9 +183,9 @@ The system automatically applies different configurations based on document char
 - **SHARP_ENHANCEMENT_CONFIG**: For documents needing aggressive enhancement
 - **CLEAN_DOCUMENT_CONFIG**: For documents with normal quality
 
-## 🌐 API Deployment
+## 🌐 API Deployment (Version 0.1.11)
 
-This project now includes a **REST API** for web integration!
+This project now includes a **production-ready REST API** for web integration!
 
 ### 🚀 Quick API Start
 ```bash
@@ -184,16 +197,67 @@ python start_api.py
 # Documentation: http://localhost:8000/docs
 ```
 
+### 🎆 New API Features (v0.1.11)
+- **📄 Multi-page PDF Support**: Converts ALL pages in PDF to individual PNG files
+- **📊 Real-time Progress**: Track processing status with live updates
+- **🗜️ ZIP Downloads**: Multi-page documents returned as ZIP archives
+- **🚀 Background Processing**: Non-blocking document transformation
+- **📋 Intelligent Caching**: Avoid reprocessing identical documents
+- **⚙️ 4 Transformation Types**: basic, deskewing, enhanced, comprehensive
+- **📡 RESTful Design**: Standard HTTP methods and status codes
+
 ### 📡 API Endpoints
-- `POST /documents/transform` - Upload and process documents
-- `GET /documents/{id}/status` - Check processing status  
-- `GET /documents/{id}/result` - Download processed results
+- `POST /documents/transform` - Upload files or provide URLs for processing
+- `GET /documents/{id}/status` - Check processing status and progress
+- `GET /documents/{id}/result` - Download processed results (PNG or ZIP)
+- `GET /docs` - Interactive API documentation (Swagger UI)
+- `GET /health` - Health check endpoint
 
 ### 🐳 Docker Deployment
 ```bash
 # Build and run with Docker
 docker build -t ocr-pipeline .
 docker run -p 8000:8000 ocr-pipeline
+
+# Or with environment variables
+docker run -p 8000:8000 -e MAX_WORKERS=4 -e DEBUG=False ocr-pipeline
+```
+
+### ☁️ Cloud Platform Deployment
+```bash
+# Deploy to Railway, Render, or similar platforms
+git push origin main  # Auto-deploy on git push
+
+# Environment variables to configure:
+# HOST=0.0.0.0
+# PORT=8000
+# MAX_WORKERS=4
+# DEBUG=False
+```
+
+### 🛠️ API Client Example
+``python
+import requests
+
+# Upload and process a document
+with open('document.pdf', 'rb') as f:
+    response = requests.post(
+        'http://localhost:8000/documents/transform',
+        files={'file': f},
+        data={'transformations': 'deskewing'}
+    )
+
+doc_id = response.json()['document_id']
+
+# Check status
+status = requests.get(f'http://localhost:8000/documents/{doc_id}/status')
+print(f"Status: {status.json()['status']}")
+
+# Download result when ready
+if status.json()['status'] == 'completed':
+    result = requests.get(f'http://localhost:8000/documents/{doc_id}/result')
+    with open('processed_document.zip', 'wb') as f:
+        f.write(result.content)
 ```
 
 For detailed API documentation, see [`API_README.md`](API_README.md)
@@ -311,6 +375,17 @@ A: Reduce workers: `python run.py --workers 2`
 
 ## 📈 Version History
 
+- **v0.1.11**: 🎆 **REST API & Production Deployment**
+  - Complete FastAPI REST API with document transformation endpoints
+  - Multi-page PDF processing with individual PNG conversion for each page
+  - Real-time status tracking and progress monitoring
+  - ZIP archive downloads for multi-page documents
+  - Background task processing with SQLAlchemy database
+  - Intelligent caching system for performance optimization
+  - Docker containerization support for cloud deployment
+  - Production-ready configuration with health checks
+  - Comprehensive API documentation and client examples
+  - 4 transformation types: basic, deskewing, enhanced, comprehensive
 - **v0.1.10**: ✅ **Performance & Quality Optimization**
   - Enhanced parallel processing with up to 8 workers
   - Optimized execution modes for maximum speed
@@ -386,6 +461,17 @@ output/processed_document/
 
 ## 🎯 What's New
 
+✨ **NEW in v0.1.11 - REST API & Production Features**:  
+✅ **Complete REST API**: FastAPI-based web service with auto-documentation  
+✅ **Multi-page PDF API**: Converts ALL pages to PNG with ZIP download  
+✅ **Real-time Tracking**: Live progress monitoring via API endpoints  
+✅ **Docker Support**: Container deployment for cloud platforms  
+✅ **Background Processing**: Non-blocking document transformation  
+✅ **Intelligent Caching**: SQLAlchemy-based performance optimization  
+✅ **Production Ready**: Health checks, error handling, logging  
+✅ **Client Examples**: Working code samples and usage guides  
+
+✅ **Enhanced in v0.1.10 - Pipeline Optimization**:  
 ✅ **Task 8 Brightness Fix**: 69% reduction in background darkening  
 ✅ **Enhanced Sharpening**: Moderate sharpening with artifact prevention  
 ✅ **File-Specific Configs**: Automatic detection and optimal processing  
@@ -400,3 +486,7 @@ output/processed_document/
 ---
 
 **Ready to process your documents with intelligence and speed!** 🚀
+
+**Choose your interface:**
+- **Command Line (v0.1.10)**: `python run.py` for batch processing
+- **REST API (v0.1.11)**: `python start_api.py` for web integration
