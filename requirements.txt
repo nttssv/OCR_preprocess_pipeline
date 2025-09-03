@@ -1,9 +1,33 @@
+# Core pipeline dependencies
 opencv-python>=4.5.0
 numpy>=1.19.0
 matplotlib>=3.3.0
+scipy>=1.7.0  # Required for skew detection
 scikit-image>=0.18.0
 pdf2image>=1.16.0
 Pillow>=8.0.0
 PyMuPDF>=1.20.0  # Fast PDF rendering (fitz)
 pytesseract>=0.3.8  # OCR for language detection
 reportlab>=3.6.0  # PDF generation for output specifications
+
+# API framework dependencies
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+python-multipart>=0.0.6  # File upload support
+pydantic>=2.0.0
+pydantic-settings>=2.0.0
+
+# Database dependencies
+sqlalchemy>=2.0.0
+aiosqlite>=0.19.0  # Async SQLite support
+alembic>=1.12.0  # Database migrations
+
+# HTTP client for URL downloads
+httpx>=0.25.0
+aiofiles>=23.0.0  # Async file operations
+
+# Additional utilities
+python-jose[cryptography]>=3.3.0  # JWT tokens (if needed later)
+passlib[bcrypt]>=1.7.4  # Password hashing (if needed later)
+python-dotenv>=1.0.0  # Environment variables
+typing-extensions>=4.8.0
