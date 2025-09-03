@@ -170,6 +170,34 @@ The system automatically applies different configurations based on document char
 - **SHARP_ENHANCEMENT_CONFIG**: For documents needing aggressive enhancement
 - **CLEAN_DOCUMENT_CONFIG**: For documents with normal quality
 
+## 🌐 API Deployment
+
+This project now includes a **REST API** for web integration!
+
+### 🚀 Quick API Start
+```bash
+# Start the API server
+python start_api.py
+
+# API will be available at:
+# http://localhost:8000
+# Documentation: http://localhost:8000/docs
+```
+
+### 📡 API Endpoints
+- `POST /documents/transform` - Upload and process documents
+- `GET /documents/{id}/status` - Check processing status  
+- `GET /documents/{id}/result` - Download processed results
+
+### 🐳 Docker Deployment
+```bash
+# Build and run with Docker
+docker build -t ocr-pipeline .
+docker run -p 8000:8000 ocr-pipeline
+```
+
+For detailed API documentation, see [`API_README.md`](API_README.md)
+
 ## 📊 Performance
 
 | Files | Sequential | Parallel (4 workers) | Speedup |
