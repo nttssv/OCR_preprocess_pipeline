@@ -64,10 +64,30 @@ class Settings(BaseSettings):
     LARGE_FILE_THRESHOLD: int = 50 * 1024 * 1024  # 50MB
     PROCESSING_TIME_THRESHOLD: int = 120  # 2 minutes
     
-    # Caching
+    # Caching and Performance
     ENABLE_CACHING: bool = True
     CACHE_EXPIRY_HOURS: int = 24
     MAX_CACHE_SIZE: int = 1024 * 1024 * 1024  # 1GB
+    
+    # Redis-like cache settings
+    MEMORY_CACHE_SIZE: int = 1000  # Number of entries in memory cache
+    MEMORY_CACHE_TTL: int = 3600   # Default TTL in seconds
+    ENABLE_FILE_CACHE: bool = True
+    
+    # Performance indexes and optimization
+    ENABLE_SEARCH_INDEXES: bool = True
+    SEARCH_RESULTS_CACHE_TTL: int = 600  # 10 minutes
+    PAGE_ACCESS_CACHE_TTL: int = 1800   # 30 minutes
+    
+    # File management optimization
+    THUMBNAIL_SIZE: tuple = (200, 200)
+    ENABLE_THUMBNAILS: bool = True
+    PREGENERATE_PAGE_IMAGES: bool = True
+    
+    # Analytics and monitoring
+    ENABLE_ACCESS_TRACKING: bool = True
+    ACCESS_LOG_RETENTION_DAYS: int = 30
+    PERFORMANCE_METRICS_ENABLED: bool = True
     
     # Cleanup
     CLEANUP_TEMP_FILES: bool = True

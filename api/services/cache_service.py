@@ -1,0 +1,68 @@
+#!/usr/bin/env python3
+"""
+Cache Management Service
+Redis-compatible caching layer for metadata and page images with performance optimization
+"""
+
+import os
+import json
+import hashlib
+import asyncio
+from datetime import datetime, timedelta
+from typing import Optional, Dict, Any, List
+from pathlib import Path
+
+from ..core.config import settings
+from ..core.logger import get_logger
+
+logger = get_logger(__name__)
+
+
+class MemoryCache:
+    """In-memory cache with TTL and LRU eviction"""
+    
+    def __init__(self, max_size: int = 1000, default_ttl: int = 3600):
+        self.max_size = max_size
+        self.default_ttl = default_ttl
+        self._cache: Dict[str, Dict[str, Any]] = {}
+        self._access_order: List[str] = []
+    
+    def _is_expired(self, entry: Dict[str, Any]) -> bool:
+        """Check if cache entry is expired"""
+        if 'expires_at' not in entry:
+            return False
+        return datetime.utcnow() > entry['expires_at']
+    
+    def _evict_lru(self):
+        """Evict least recently used entries"""
+        while len(self._cache) >= self.max_size and self._access_order:
+            key = self._access_order.pop(0)
+            if key in self._cache:
+                del self._cache[key]
+    
+    def _update_access(self, key: str):
+        """Update access order for LRU"""
+        if key in self._access_order:
+            self._access_order.remove(key)
+        self._access_order.append(key)
+    
+    def get(self, key: str) -> Optional[Any]:
+        """Get value from cache"""
+        if key not in self._cache:
+            return None
+        
+        entry = self._cache[key]
+        
+        # Check expiration
+        if self._is_expired(entry):
+            del self._cache[key]
+            if key in self._access_order:
+                self._access_order.remove(key)
+            return None
+        
+        # Update access order
+        self._update_access(key)
+        
+        return entry['value']
+    
+    def set(self, key: str, value: Any, ttl: Optional[int] = None) -> bool:\n        \"\"\"Set value in cache with TTL\"\"\"\n        ttl = ttl or self.default_ttl\n        expires_at = datetime.utcnow() + timedelta(seconds=ttl)\n        \n        # Evict if necessary\n        if key not in self._cache:\n            self._evict_lru()\n        \n        self._cache[key] = {\n            'value': value,\n            'expires_at': expires_at,\n            'created_at': datetime.utcnow()\n        }\n        \n        self._update_access(key)\n        return True\n    \n    def delete(self, key: str) -> bool:\n        \"\"\"Delete key from cache\"\"\"\n        if key in self._cache:\n            del self._cache[key]\n            if key in self._access_order:\n                self._access_order.remove(key)\n            return True\n        return False\n    \n    def clear(self):\n        \"\"\"Clear all cache entries\"\"\"\n        self._cache.clear()\n        self._access_order.clear()\n    \n    def size(self) -> int:\n        \"\"\"Get current cache size\"\"\"\n        return len(self._cache)\n    \n    def stats(self) -> Dict[str, Any]:\n        \"\"\"Get cache statistics\"\"\"\n        return {\n            'size': len(self._cache),\n            'max_size': self.max_size,\n            'hit_ratio': 0.0,  # Would need hit/miss tracking\n            'memory_usage': 'estimated_low'  # Would need actual memory calculation\n        }\n\n\nclass FileCacheManager:\n    \"\"\"File-based cache for larger objects and persistence\"\"\"\n    \n    def __init__(self, cache_dir: str):\n        self.cache_dir = Path(cache_dir)\n        self.cache_dir.mkdir(exist_ok=True)\n        \n        # Create subdirectories\n        (self.cache_dir / 'metadata').mkdir(exist_ok=True)\n        (self.cache_dir / 'thumbnails').mkdir(exist_ok=True)\n        (self.cache_dir / 'page_cache').mkdir(exist_ok=True)\n    \n    def _get_cache_path(self, cache_type: str, key: str) -> Path:\n        \"\"\"Get cache file path\"\"\"\n        # Create safe filename from key\n        safe_key = hashlib.md5(key.encode()).hexdigest()\n        return self.cache_dir / cache_type / f\"{safe_key}.cache\"\n    \n    def _is_expired(self, file_path: Path, ttl: int) -> bool:\n        \"\"\"Check if cache file is expired\"\"\"\n        if not file_path.exists():\n            return True\n        \n        file_age = datetime.utcnow() - datetime.fromtimestamp(file_path.stat().st_mtime)\n        return file_age > timedelta(seconds=ttl)\n    \n    def get_metadata(self, document_id: str) -> Optional[Dict[str, Any]]:\n        \"\"\"Get cached metadata\"\"\"\n        cache_path = self._get_cache_path('metadata', document_id)\n        \n        if self._is_expired(cache_path, settings.CACHE_EXPIRY_HOURS * 3600):\n            return None\n        \n        try:\n            with open(cache_path, 'r') as f:\n                return json.load(f)\n        except (IOError, json.JSONDecodeError):\n            return None\n    \n    def set_metadata(self, document_id: str, metadata: Dict[str, Any]) -> bool:\n        \"\"\"Cache document metadata\"\"\"\n        cache_path = self._get_cache_path('metadata', document_id)\n        \n        try:\n            with open(cache_path, 'w') as f:\n                json.dump(metadata, f, indent=2, default=str)\n            return True\n        except IOError:\n            return False\n    \n    def get_thumbnail_path(self, page_id: str) -> Optional[str]:\n        \"\"\"Get cached thumbnail path if exists\"\"\"\n        cache_path = self._get_cache_path('thumbnails', page_id)\n        \n        if self._is_expired(cache_path, 24 * 3600):  # 24 hour TTL for thumbnails\n            return None\n        \n        if cache_path.exists():\n            return str(cache_path)\n        \n        return None\n    \n    def cache_thumbnail(self, page_id: str, thumbnail_data: bytes, format: str = 'png') -> Optional[str]:\n        \"\"\"Cache thumbnail data\"\"\"\n        cache_path = self._get_cache_path('thumbnails', f\"{page_id}.{format}\")\n        \n        try:\n            with open(cache_path, 'wb') as f:\n                f.write(thumbnail_data)\n            return str(cache_path)\n        except IOError:\n            return None\n    \n    def cleanup_expired(self) -> int:\n        \"\"\"Clean up expired cache files\"\"\"\n        count = 0\n        \n        for cache_type in ['metadata', 'thumbnails', 'page_cache']:\n            cache_dir = self.cache_dir / cache_type\n            if not cache_dir.exists():\n                continue\n            \n            for cache_file in cache_dir.glob('*.cache'):\n                if self._is_expired(cache_file, settings.CACHE_EXPIRY_HOURS * 3600):\n                    try:\n                        cache_file.unlink()\n                        count += 1\n                    except OSError:\n                        pass\n        \n        return count\n    \n    def get_cache_stats(self) -> Dict[str, Any]:\n        \"\"\"Get file cache statistics\"\"\"\n        stats = {\n            'total_files': 0,\n            'total_size_mb': 0.0,\n            'by_type': {}\n        }\n        \n        for cache_type in ['metadata', 'thumbnails', 'page_cache']:\n            cache_dir = self.cache_dir / cache_type\n            if not cache_dir.exists():\n                continue\n            \n            files = list(cache_dir.glob('*'))\n            total_size = sum(f.stat().st_size for f in files if f.is_file())\n            \n            stats['by_type'][cache_type] = {\n                'files': len(files),\n                'size_mb': total_size / (1024 * 1024)\n            }\n            \n            stats['total_files'] += len(files)\n            stats['total_size_mb'] += total_size / (1024 * 1024)\n        \n        return stats\n\n\nclass CacheService:\n    \"\"\"Unified cache service with memory and file-based caching\"\"\"\n    \n    def __init__(self):\n        self.memory_cache = MemoryCache(\n            max_size=1000,\n            default_ttl=3600  # 1 hour default TTL\n        )\n        self.file_cache = FileCacheManager(settings.CACHE_DIR)\n        \n        logger.info(f\"🚀 Cache service initialized - Memory: {self.memory_cache.max_size} entries, File: {settings.CACHE_DIR}\")\n    \n    async def get_document_metadata(self, document_id: str) -> Optional[Dict[str, Any]]:\n        \"\"\"Get document metadata with cache hierarchy\"\"\"\n        # Try memory cache first\n        cache_key = f\"metadata:{document_id}\"\n        metadata = self.memory_cache.get(cache_key)\n        \n        if metadata is not None:\n            logger.debug(f\"📊 Metadata cache hit (memory): {document_id}\")\n            return metadata\n        \n        # Try file cache\n        metadata = self.file_cache.get_metadata(document_id)\n        \n        if metadata is not None:\n            # Store in memory cache for faster future access\n            self.memory_cache.set(cache_key, metadata, ttl=1800)  # 30 min in memory\n            logger.debug(f\"📊 Metadata cache hit (file): {document_id}\")\n            return metadata\n        \n        logger.debug(f\"📊 Metadata cache miss: {document_id}\")\n        return None\n    \n    async def set_document_metadata(self, document_id: str, metadata: Dict[str, Any]) -> bool:\n        \"\"\"Cache document metadata in both memory and file\"\"\"\n        cache_key = f\"metadata:{document_id}\"\n        \n        # Store in memory cache\n        memory_success = self.memory_cache.set(cache_key, metadata, ttl=1800)\n        \n        # Store in file cache for persistence\n        file_success = self.file_cache.set_metadata(document_id, metadata)\n        \n        if file_success:\n            logger.debug(f\"📊 Cached metadata: {document_id}\")\n        \n        return memory_success and file_success\n    \n    async def get_page_info(self, document_id: str, page_number: int) -> Optional[Dict[str, Any]]:\n        \"\"\"Get cached page information\"\"\"\n        cache_key = f\"page:{document_id}:{page_number}\"\n        return self.memory_cache.get(cache_key)\n    \n    async def set_page_info(self, document_id: str, page_number: int, page_info: Dict[str, Any]) -> bool:\n        \"\"\"Cache page information\"\"\"\n        cache_key = f\"page:{document_id}:{page_number}\"\n        return self.memory_cache.set(cache_key, page_info, ttl=3600)\n    \n    async def get_search_results(self, search_hash: str) -> Optional[List[Dict[str, Any]]]:\n        \"\"\"Get cached search results\"\"\"\n        cache_key = f\"search:{search_hash}\"\n        return self.memory_cache.get(cache_key)\n    \n    async def set_search_results(self, search_hash: str, results: List[Dict[str, Any]]) -> bool:\n        \"\"\"Cache search results\"\"\"\n        cache_key = f\"search:{search_hash}\"\n        return self.memory_cache.set(cache_key, results, ttl=600)  # 10 min for search results\n    \n    async def invalidate_document(self, document_id: str):\n        \"\"\"Invalidate all cached data for a document\"\"\"\n        # Remove from memory cache\n        keys_to_remove = []\n        for key in self.memory_cache._cache.keys():\n            if document_id in key:\n                keys_to_remove.append(key)\n        \n        for key in keys_to_remove:\n            self.memory_cache.delete(key)\n        \n        # Remove from file cache\n        cache_path = self.file_cache._get_cache_path('metadata', document_id)\n        if cache_path.exists():\n            cache_path.unlink()\n        \n        logger.info(f\"🗑️ Invalidated cache for document: {document_id}\")\n    \n    async def cleanup_expired(self) -> Dict[str, int]:\n        \"\"\"Clean up expired cache entries\"\"\"\n        file_cleaned = self.file_cache.cleanup_expired()\n        \n        # Memory cache auto-expires on access, but we can force cleanup\n        memory_before = self.memory_cache.size()\n        # Force check all entries for expiration\n        expired_keys = []\n        for key, entry in self.memory_cache._cache.items():\n            if self.memory_cache._is_expired(entry):\n                expired_keys.append(key)\n        \n        for key in expired_keys:\n            self.memory_cache.delete(key)\n        \n        memory_cleaned = len(expired_keys)\n        \n        logger.info(f\"🧹 Cache cleanup: {memory_cleaned} memory entries, {file_cleaned} file entries\")\n        \n        return {\n            'memory_cleaned': memory_cleaned,\n            'file_cleaned': file_cleaned\n        }\n    \n    def get_cache_statistics(self) -> Dict[str, Any]:\n        \"\"\"Get comprehensive cache statistics\"\"\"\n        memory_stats = self.memory_cache.stats()\n        file_stats = self.file_cache.get_cache_stats()\n        \n        return {\n            'memory_cache': memory_stats,\n            'file_cache': file_stats,\n            'cache_dir': str(self.file_cache.cache_dir),\n            'total_cached_documents': memory_stats['size'] + file_stats['by_type'].get('metadata', {}).get('files', 0)\n        }\n\n\n# Global cache service instance\ncache_service = CacheService()</n\n\n# Utility function to generate search hash\ndef generate_search_hash(search_params: Dict[str, Any]) -> str:\n    \"\"\"Generate hash for search parameters to use as cache key\"\"\"\n    # Sort parameters for consistent hashing\n    sorted_params = json.dumps(search_params, sort_keys=True)\n    return hashlib.md5(sorted_params.encode()).hexdigest()

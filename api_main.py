@@ -25,6 +25,7 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 # Import our API modules
 from api.routers import documents
+from api.routers import document_management
 from api.core.config import settings
 from api.core.database import init_db
 from api.core.logger import setup_logging
@@ -117,6 +118,12 @@ app.include_router(
     tags=["documents"]
 )
 
+# Include document management router
+app.include_router(
+    document_management.router,
+    tags=["Document Management"]
+)
+
 # Serve static files (for processed documents)
 if os.path.exists(settings.OUTPUT_DIR):
     app.mount("/files", StaticFiles(directory=settings.OUTPUT_DIR), name="files")
@@ -172,6 +179,21 @@ async def root():
         <div class="endpoint">
             <span class="method">GET</span> <span class="path">/documents/{document_id}/result</span>
             <div class="description">Download processed document results</div>
+        </div>
+        
+        <div class="endpoint">
+            <span class="method">GET</span> <span class="path">/documents/{document_id}/metadata</span>
+            <div class="description">Get comprehensive document metadata and analytics</div>
+        </div>
+        
+        <div class="endpoint">
+            <span class="method">GET</span> <span class="path">/documents/search</span>
+            <div class="description">Search documents by filename, hash, or other filters</div>
+        </div>
+        
+        <div class="endpoint">
+            <span class="method">GET</span> <span class="path">/documents/{document_id}/pages/{pageNumber}</span>
+            <div class="description">Retrieve preprocessed page image with O(1) fast access</div>
         </div>
         
         <div class="endpoint">
