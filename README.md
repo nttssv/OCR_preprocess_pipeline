@@ -3,16 +3,19 @@
 🚀 **Intelligent parallel document processing with automatic quality optimization and brightness preservation**
 
 **Pipeline Version: 0.1.10** - Enhanced Performance & Quality Optimization  
-**API Version: 0.1.11** - REST API with Multi-page PDF Support & Docker Deployment
+**API Version: 0.1.11** - REST API with Multi-page PDF Support & Docker Deployment  
+**Document Management: 0.1.12** - Advanced File Management System with Search & Metadata
 
 ## 🌌 Overview
 
 **Choose Your Interface:**
 - **💻 Command Line**: Use [`run.py`](run.py) for batch processing and automation
 - **🌐 REST API**: Use [`start_api.py`](start_api.py) for web integration and remote processing
+- **📁 Document Management**: Advanced file management with search, metadata, and analytics
 
 **Key Capabilities:**
 - **Multi-page PDF Processing**: Converts all PDF pages to individual PNG files
+- **Document Management System**: SHA-256 hashing, metadata tracking, and advanced search
 - **Intelligent Transformations**: 4 processing modes (basic, deskewing, enhanced, comprehensive)
 - **Real-time Status Tracking**: Monitor processing progress via API endpoints
 - **Production Ready**: Docker support, caching, performance optimization
@@ -28,6 +31,15 @@
 - **🔄 Multi-page Support**: Automatic detection and splitting of double-page scans
 - **🎨 Color Handling**: Preserves colored stamps/signatures while optimizing text for OCR
 - **📈 Visual Analysis**: Built-in sharpness progression tracking and quality metrics
+
+### 🔍 **Document Management System (v0.1.12)**
+- **📁 Advanced File Management**: SHA-256 hashing for uniqueness verification
+- **🔍 Search & Query**: Multi-parameter search by filename, hash, type, and dates
+- **📊 Metadata Tracking**: Comprehensive file information, processing analytics
+- **⚡ Fast Retrieval**: O(1) page access with pre-generated thumbnails
+- **📋 Structured Storage**: Organized file system with page-level directories
+- **🚀 Performance Optimization**: Redis-like caching with memory + file persistence
+- **📊 Analytics Dashboard**: Processing metrics, quality scores, and performance tracking
 
 ## 🚀 Quick Start
 
@@ -236,7 +248,44 @@ git push origin main  # Auto-deploy on git push
 ```
 
 ### 🛠️ API Client Example
-``python
+### 🔍 **Document Management Examples (v0.1.12)**
+```python
+import requests
+
+# Upload document with automatic metadata extraction
+with open('invoice.pdf', 'rb') as f:
+    response = requests.post(
+        'http://localhost:8000/documents/transform',
+        files={'file': f},
+        data={'transformations': 'enhanced'}
+    )
+
+doc_id = response.json()['document_id']
+
+# Get comprehensive metadata
+metadata = requests.get(f'http://localhost:8000/documents/{doc_id}/metadata').json()
+print(f"Document: {metadata['document_info']['original_filename']}")
+print(f"Hash: {metadata['document_info']['content_hash'][:16]}...")
+print(f"Processing Time: {metadata['processing_info']['processing_time']:.1f}s")
+
+# Search for similar documents
+search_response = requests.get(
+    'http://localhost:8000/documents/search',
+    params={'name': 'invoice', 'status': 'completed'}
+)
+documents = search_response.json()['documents']
+print(f"Found {len(documents)} invoice documents")
+
+# Check for duplicates using hash
+duplicates = requests.get(
+    f"http://localhost:8000/documents/search?hash={metadata['document_info']['content_hash']}"
+).json()
+if duplicates['total_results'] > 1:
+    print("⚠️ Duplicate document found!")
+```
+
+### 🐍 **Standard API Examples**
+```python
 import requests
 
 # Upload and process a document
@@ -375,6 +424,17 @@ A: Reduce workers: `python run.py --workers 2`
 
 ## 📈 Version History
 
+- **v0.1.12**: 🔍 **Document Management System**
+  - SHA-256 file hashing for uniqueness verification and duplicate detection
+  - Advanced search capabilities: filename, hash, type, date range filtering
+  - Comprehensive metadata tracking: file info, processing analytics, quality metrics
+  - Page-level storage with O(1) retrieval and pre-generated thumbnails
+  - Redis-like caching system with memory + file persistence (LRU eviction, TTL)
+  - Structured storage organization with document-specific directories
+  - Enhanced API endpoints: /documents/search, /documents/{id}/metadata, /documents/{id}/pages
+  - Performance optimization with composite database indexes
+  - Analytics dashboard with processing metrics and quality scores
+  - Fast duplicate detection and content verification
 - **v0.1.11**: 🎆 **REST API & Production Deployment**
   - Complete FastAPI REST API with document transformation endpoints
   - Multi-page PDF processing with individual PNG conversion for each page

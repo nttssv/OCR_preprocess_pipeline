@@ -117,7 +117,8 @@ async def transform_document(
                     file_size=file_info["size"],
                     file_type=file_info["type"],
                     transformation_type=transformations,
-                    content_hash=file_hash
+                    content_hash=file_hash,
+                    original_filename=file_info["original_filename"]
                 )
                 
                 # Update to completed status immediately
@@ -146,7 +147,8 @@ async def transform_document(
             file_size=file_info["size"],
             file_type=file_info["type"],
             transformation_type=transformations,
-            content_hash=file_hash
+            content_hash=file_hash,
+            original_filename=file_info["original_filename"]
         )
         
         logger.info(f"📄 Created document record: {document.id} for {original_filename}")

@@ -433,14 +433,20 @@ class DocumentOps:
         file_size: int,
         file_type: str,
         transformation_type: str = "deskewing",
-        content_hash: Optional[str] = None
+        content_hash: Optional[str] = None,
+        original_filename: Optional[str] = None
     ) -> Document:
         """Create a new document record"""
         document_id = str(uuid.uuid4())
         
+        # Use filename as original_filename if not provided
+        if original_filename is None:
+            original_filename = filename
+        
         doc = Document(
             id=document_id,
             filename=filename,
+            original_filename=original_filename,
             original_path=original_path,
             file_size=file_size,
             file_type=file_type,
